@@ -1,0 +1,384 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { collection, getDocs, addDoc, deleteDoc, doc, Timestamp } from "firebase/firestore"
+import { db } from "../firebase"
+import AdminNavbar from "../components/AdminNavbar"
+import { generatePDF, generateExcel } from "../utils/reportGenerator"
+import "../styles/AdminTable.css"
+
+const AdminRevenue = () => {
+  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState([])
+  const [showModal, setShowModal] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [sortField, setSortField] = useState("date")
+  const [sortDirection, setSortDirection] = useState("desc")
+  const [totalRevenue, setTotalRevenue] = useState(0)
+
+  const [formData, setFormData] = useState({
+    country: "Sri Lanka",
+    customCountry: "",
+    assist: "Vishwa",
+    amount: "",
+    rate: "",
+    date: new Date().toISOString().split("T")[0],
+    invoiceNumber: "",
+  })
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  useEffect(() => {
+    // Calculate total revenue
+    const total = data.reduce((sum, item) => sum + (Number.parseFloat(item.amount) || 0), 0)
+    setTotalRevenue(total)
+  }, [data])
+
+  const fetchData = async () => {
+    try {
+      setLoading(true)
+      const querySnapshot = await getDocs(collection(db, "revenue"))
+      const items = []
+      querySnapshot.forEach((doc) => {
+        items.push({ id: doc.id, ...doc.data() })
+      })
+      setData(items)
+    } catch (error) {
+      console.error("Error fetching revenue data:", error)
+      alert("Error fetching data. Please try again.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+
+    try {
+      const country = formData.country === "Custom" ? formData.customCountry : formData.country
+
+      const dataToSave = {
+        country,
+        assist: formData.assist,
+        amount: Number.parseFloat(formData.amount),
+        rate: Number.parseFloat(formData.rate),
+        date: formData.date,
+        invoiceNumber: formData.invoiceNumber,
+        createdAt: Timestamp.now(),
+      }
+
+      await addDoc(collection(db, "revenue"), dataToSave)
+
+      alert("Revenue entry added successfully!")
+      setShowModal(false)
+      resetForm()
+      fetchData()
+    } catch (error) {
+      console.error("Error adding revenue entry:", error)
+      alert("Error adding entry. Please try again.")
+    }
+  }
+
+  const handleDelete = async (id) => {
+    if (window.confirm("Are you sure you want to delete this entry?")) {
+      try {
+        await deleteDoc(doc(db, "revenue", id))
+        alert("Entry deleted successfully!")
+        fetchData()
+      } catch (error) {
+        console.error("Error deleting entry:", error)
+        alert("Error deleting entry. Please try again.")
+      }
+    }
+  }
+
+  const resetForm = () => {
+    setFormData({
+      country: "Sri Lanka",
+      customCountry: "",
+      assist: "Vishwa",
+      amount: "",
+      rate: "",
+      date: new Date().toISOString().split("T")[0],
+      invoiceNumber: "",
+    })
+  }
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+    } else {
+      setSortField(field)
+      setSortDirection("asc")
+    }
+  }
+
+  const filteredAndSortedData = data
+    .filter((item) =>
+      Object.values(item).some((value) => value?.toString().toLowerCase().includes(searchTerm.toLowerCase())),
+    )
+    .sort((a, b) => {
+      const aVal = a[sortField]
+      const bVal = b[sortField]
+      const modifier = sortDirection === "asc" ? 1 : -1
+
+      if (typeof aVal === "string") {
+        return aVal.localeCompare(bVal) * modifier
+      }
+      return (aVal - bVal) * modifier
+    })
+
+  const handleGenerateReport = () => {
+    const headers = ["Date", "Country", "Assist", "Amount (¥)", "Rate", "Invoice Number"]
+    const reportData = filteredAndSortedData.map((item) => [
+      item.date,
+      item.country,
+      item.assist,
+      `¥${item.amount.toLocaleString()}`,
+      item.rate,
+      item.invoiceNumber,
+    ])
+
+    const summary = {
+      "Total Entries": filteredAndSortedData.length,
+      "Total Revenue": `¥${totalRevenue.toLocaleString()}`,
+    }
+
+    generatePDF("Revenue Report", headers, reportData, summary)
+    generateExcel("Revenue Report", headers, reportData, summary)
+  }
+
+  if (loading) {
+    return (
+      <>
+        <AdminNavbar />
+        <div className="d-flex justify-content-center align-items-center" style={{ minHeight: "calc(100vh - 70px)" }}>
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <AdminNavbar />
+      <div className="admin-table-container">
+        <div className="container-fluid py-4">
+          <div className="table-header">
+            <h2>Revenue Management</h2>
+            <div className="header-actions">
+              <button onClick={handleGenerateReport} className="btn btn-success me-2">
+                Generate Report
+              </button>
+              <button onClick={() => setShowModal(true)} className="btn btn-primary">
+                Add Revenue Entry
+              </button>
+            </div>
+          </div>
+
+          {/* Total Revenue Card */}
+          <div className="alert alert-info mb-3 d-flex justify-content-between align-items-center" role="alert">
+            <strong>Total Revenue:</strong>
+            <span className="fs-4 fw-bold">¥{totalRevenue.toLocaleString()}</span>
+          </div>
+
+          <div className="search-box mb-3">
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
+          <div className="table-responsive">
+            <table className="table table-hover">
+              <thead>
+                <tr>
+                  <th onClick={() => handleSort("date")} style={{ cursor: "pointer" }}>
+                    Date {sortField === "date" && (sortDirection === "asc" ? "↑" : "↓")}
+                  </th>
+                  <th onClick={() => handleSort("country")} style={{ cursor: "pointer" }}>
+                    Country {sortField === "country" && (sortDirection === "asc" ? "↑" : "↓")}
+                  </th>
+                  <th onClick={() => handleSort("assist")} style={{ cursor: "pointer" }}>
+                    Assist {sortField === "assist" && (sortDirection === "asc" ? "↑" : "↓")}
+                  </th>
+                  <th onClick={() => handleSort("amount")} style={{ cursor: "pointer" }}>
+                    Amount (¥) {sortField === "amount" && (sortDirection === "asc" ? "↑" : "↓")}
+                  </th>
+                  <th>Rate</th>
+                  <th>Invoice Number</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAndSortedData.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="text-center py-4">
+                      No data available
+                    </td>
+                  </tr>
+                ) : (
+                  filteredAndSortedData.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.date}</td>
+                      <td>{item.country}</td>
+                      <td>{item.assist}</td>
+                      <td className="text-success fw-bold">¥{item.amount.toLocaleString()}</td>
+                      <td>{item.rate}</td>
+                      <td>{item.invoiceNumber}</td>
+                      <td>
+                        <button onClick={() => handleDelete(item.id)} className="btn btn-sm btn-danger">
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal */}
+      {showModal && (
+        <div className="modal-backdrop show">
+          <div className="modal show d-block" tabIndex="-1">
+            <div className="modal-dialog modal-lg">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">Add Revenue Entry</h5>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    onClick={() => {
+                      setShowModal(false)
+                      resetForm()
+                    }}
+                  ></button>
+                </div>
+                <div className="modal-body">
+                  <form onSubmit={handleSubmit}>
+                    <div className="row">
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Country</label>
+                        <select
+                          className="form-select"
+                          value={formData.country}
+                          onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                          required
+                        >
+                          <option value="Sri Lanka">Sri Lanka</option>
+                          <option value="Japan">Japan</option>
+                          <option value="Custom">Other (Type Custom)</option>
+                        </select>
+                      </div>
+                      {formData.country === "Custom" && (
+                        <div className="col-md-6 mb-3">
+                          <label className="form-label">Custom Country</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            value={formData.customCountry}
+                            onChange={(e) => setFormData({ ...formData, customCountry: e.target.value })}
+                            placeholder="Enter country name"
+                            required
+                          />
+                        </div>
+                      )}
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Assist</label>
+                        <select
+                          className="form-select"
+                          value={formData.assist}
+                          onChange={(e) => setFormData({ ...formData, assist: e.target.value })}
+                          required
+                        >
+                          <option value="Vishwa">Vishwa</option>
+                          <option value="Dilshan">Dilshan</option>
+                          <option value="Saman">Saman</option>
+                        </select>
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Amount (¥)</label>
+                        <div className="input-group">
+                          <span className="input-group-text">¥</span>
+                          <input
+                            type="number"
+                            className="form-control"
+                            value={formData.amount}
+                            onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                            required
+                            min="0"
+                            step="0.01"
+                          />
+                        </div>
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Rate</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          value={formData.rate}
+                          onChange={(e) => setFormData({ ...formData, rate: e.target.value })}
+                          required
+                          min="0"
+                          step="0.01"
+                        />
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Date</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={formData.date}
+                          onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="col-md-12 mb-3">
+                        <label className="form-label">Invoice Number</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={formData.invoiceNumber}
+                          onChange={(e) => setFormData({ ...formData, invoiceNumber: e.target.value })}
+                          placeholder="Enter invoice number"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="modal-footer">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setShowModal(false)
+                          resetForm()
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn btn-primary">
+                        Add Revenue
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+export default AdminRevenue
