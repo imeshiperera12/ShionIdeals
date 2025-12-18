@@ -6,10 +6,14 @@ export const ADMIN_CREDENTIALS = [
   },
   {
     email: "vish96san@gmail.com",
-    password: "vishwashion321",
+    password: "vishwa1013",
   },
   {
-    email: "dilshan@gmail.com",
+    email: "samanslk10@gmail.com",
+    password: "samanshion321",
+  },
+  {
+    email: "dilaheraz1@gmail.com",
     password: "dilshanshion321",
   },
 ]

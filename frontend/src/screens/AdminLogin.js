@@ -83,7 +83,7 @@ const AdminLogin = () => {
   return (
     <div className="admin-login-container">
       <button onClick={toggleTheme} className="login-theme-toggle" title="Toggle dark/light mode">
-        {isDarkMode ? "☀️" : "🌙"}
+        {isDarkMode ? "☀" : "🌙"}
       </button>
 
       <div className="admin-login-box">

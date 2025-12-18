@@ -14,6 +14,8 @@ import AdminBuying from "./screens/AdminBuying"
 import AdminRevenue from "./screens/AdminRevenue"
 import AdminExpenses from "./screens/AdminExpenses"
 import ProtectedRoute from "./components/ProtectedRoute"
+import AdminApprovalPanel from "./screens/AdminApprovalPanel"
+import AdminMyRequests from "./screens/AdminMyRequests"
 
 function App() {
   return (
@@ -61,6 +63,8 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route path="/admin@shion/approvals" element={<AdminApprovalPanel />} />
+<Route path="/admin@shion/my-requests" element={<AdminMyRequests />} />
 
           {/* User-side routes with navbar and footer */}
           <Route

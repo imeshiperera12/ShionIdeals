@@ -1,57 +1,61 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { collection, getDocs, addDoc, Timestamp } from "firebase/firestore"
-import { db } from "../firebase"
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp } from "firebase/firestore"
+import { db, auth } from "../firebase"
 import AdminNavbar from "../components/AdminNavbar"
-import { generatePDF, generateExcel } from "../utils/reportGenerator"
-import { sendApprovalRequest } from "../utils/emailService"
-import { fetchBuyingDetails, getBuyingItemDetails } from "../utils/buyingService"
+import { generatePDF, generateExcel, generateProformaInvoice } from "../utils/reportGenerator"
+import { createApprovalRequest } from "../utils/approvalService"
+import { fetchBuyingDetails } from "../utils/buyingService"
+import { isSuperAdmin } from "../config/adminConfig"
 import "../styles/AdminTable.css"
 
 const AdminSelling = () => {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState([])
-  const [buyingItems, setBuyingItems] = useState([])
   const [showModal, setShowModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [sortField, setSortField] = useState("date")
   const [sortDirection, setSortDirection] = useState("desc")
-  const [editingId, setEditingId] = useState(null)
-  const [approvalRequests, setApprovalRequests] = useState([])
+  const [buyingItems, setBuyingItems] = useState([])
+  const [currentUser, setCurrentUser] = useState(null)
+  const [editingItem, setEditingItem] = useState(null)
 
   const [formData, setFormData] = useState({
     assist: "Vishwa",
-    scope: "Domestic",
-    objectType: "Vehicle",
-    identifier: "",
-    buyingPrice: "",
-    sellingPrice: "",
-    profit: 0,
-    customerName: "",
-    address: "",
-    email: "",
     date: new Date().toISOString().split("T")[0],
-    buyingSource: "", // Added reference to buying details
+    buyingId: "",
+    sellingPrice: "",
+    profit: "",
+    country: "Sri Lanka",
+    customCountry: "",
+    invoiceNumber: "",
+    customerName: "",
+    customerEmail: "",
+    customerAddress: "",
   })
 
   useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setCurrentUser(user)
+    })
     fetchData()
-    loadBuyingItems()
+    fetchBuyingData()
+    return () => unsubscribe()
   }, [])
 
-  const loadBuyingItems = async () => {
-    const items = await fetchBuyingDetails()
-    setBuyingItems(items)
-  }
-
   useEffect(() => {
-    // Calculate profit when prices change
-    const buying = Number.parseFloat(formData.buyingPrice) || 0
-    const selling = Number.parseFloat(formData.sellingPrice) || 0
-    const profit = selling - buying
-    setFormData((prev) => ({ ...prev, profit }))
-  }, [formData.buyingPrice, formData.sellingPrice])
+    if (formData.buyingId && formData.sellingPrice) {
+      const selectedBuying = buyingItems.find(item => item.id === formData.buyingId)
+      if (selectedBuying) {
+        const buyingPrice = Number.parseFloat(selectedBuying.price) || 0
+        const sellingPrice = Number.parseFloat(formData.sellingPrice) || 0
+        const calculatedProfit = sellingPrice - buyingPrice
+        setFormData(prev => ({ ...prev, profit: calculatedProfit.toFixed(2) }))
+      }
+    }
+  }, [formData.buyingId, formData.sellingPrice, buyingItems])
 
   const fetchData = async () => {
     try {
@@ -70,51 +74,40 @@ const AdminSelling = () => {
     }
   }
 
-  const handleBuyingItemSelect = (buyingId) => {
-    if (!buyingId) return
+  const fetchBuyingData = async () => {
+    const items = await fetchBuyingDetails()
+    setBuyingItems(items)
+  }
 
-    const details = getBuyingItemDetails(buyingId, buyingItems)
-    if (details) {
-      console.log("[v0] Auto-populating form with buying details:", details)
-      setFormData((prev) => ({
-        ...prev,
-        objectType: details.objectType,
-        identifier: details.identifier,
-        buyingPrice: details.buyingPrice.toString(),
-        buyingSource: buyingId,
-      }))
-    }
+  const handleGenerateInvoice = async (item) => {
+    const buyingData = buyingItems.find(b => b.id === item.buyingId)
+    await generateProformaInvoice(item, buyingData)
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
 
     try {
+      const country = formData.country === "Custom" ? formData.customCountry : formData.country
+
       const dataToSave = {
-        ...formData,
-        buyingPrice: Number.parseFloat(formData.buyingPrice),
+        assist: formData.assist,
+        date: formData.date,
+        buyingId: formData.buyingId,
         sellingPrice: Number.parseFloat(formData.sellingPrice),
         profit: Number.parseFloat(formData.profit),
+        country,
+        invoiceNumber: formData.invoiceNumber,
+        customerName: formData.customerName,
+        customerEmail: formData.customerEmail,
+        customerAddress: formData.customerAddress,
         createdAt: Timestamp.now(),
       }
 
-      if (editingId) {
-        const approvalRequest = {
-          ...sendApprovalRequest("edit", dataToSave, "current-admin"),
-          entryId: editingId,
-          collection: "selling",
-        }
+      await addDoc(collection(db, "selling"), dataToSave)
 
-        await addDoc(collection(db, "approvalRequests"), approvalRequest)
-        alert("Edit request sent to super admins for approval!")
-        console.log("[v0] Edit approval request created")
-      } else {
-        await addDoc(collection(db, "selling"), dataToSave)
-        alert("Selling entry added successfully!")
-      }
-
+      alert("Selling entry added successfully!")
       setShowModal(false)
-      setEditingId(null)
       resetForm()
       fetchData()
     } catch (error) {
@@ -123,72 +116,132 @@ const AdminSelling = () => {
     }
   }
 
-  const handleDeleteRequest = async (id) => {
-    if (window.confirm("This will send a delete request to super admins for approval.")) {
+  const handleEdit = (item) => {
+    setEditingItem(item)
+    setFormData({
+      assist: item.assist,
+      date: item.date,
+      buyingId: item.buyingId,
+      sellingPrice: item.sellingPrice.toString(),
+      profit: item.profit.toString(),
+      country: item.country,
+      customCountry: "",
+      invoiceNumber: item.invoiceNumber,
+      customerName: item.customerName || "",
+      customerEmail: item.customerEmail || "",
+      customerAddress: item.customerAddress || "",
+    })
+    setShowEditModal(true)
+  }
+
+  const handleUpdateSubmit = async (e) => {
+    e.preventDefault()
+
+    const country = formData.country === "Custom" ? formData.customCountry : formData.country
+
+    const updateData = {
+      assist: formData.assist,
+      date: formData.date,
+      buyingId: formData.buyingId,
+      sellingPrice: Number.parseFloat(formData.sellingPrice),
+      profit: Number.parseFloat(formData.profit),
+      country,
+      invoiceNumber: formData.invoiceNumber,
+      customerName: formData.customerName,
+      customerEmail: formData.customerEmail,
+      customerAddress: formData.customerAddress,
+    }
+
+    if (currentUser && isSuperAdmin(currentUser.email)) {
       try {
-        const approvalRequest = {
-          ...sendApprovalRequest("delete", { id }, "current-admin"),
-          entryId: id,
+        await updateDoc(doc(db, "selling", editingItem.id), updateData)
+        alert("Entry updated successfully!")
+        setShowEditModal(false)
+        setEditingItem(null)
+        resetForm()
+        fetchData()
+      } catch (error) {
+        console.error("Error updating entry:", error)
+        alert("Error updating entry. Please try again.")
+      }
+    } else {
+      try {
+        const requestData = {
+          action: "update",
           collection: "selling",
+          itemId: editingItem.id,
+          updateData,
+          itemDetails: editingItem,
+          requestedBy: currentUser?.email || "unknown",
         }
 
-        await addDoc(collection(db, "approvalRequests"), approvalRequest)
-        alert("Delete request sent to super admins for approval!")
-        console.log("[v0] Delete approval request created for entry:", id)
+        const result = await createApprovalRequest(requestData)
+        if (result.success) {
+          alert("Update request sent to super admin for approval!")
+          setShowEditModal(false)
+          setEditingItem(null)
+          resetForm()
+        } else {
+          alert("Error creating approval request.")
+        }
       } catch (error) {
-        console.error("Error creating delete request:", error)
-        alert("Error creating delete request. Please try again.")
+        console.error("Error creating approval request:", error)
+        alert("Error sending request. Please try again.")
       }
     }
   }
 
-  const handleEdit = (item) => {
-    setFormData({
-      assist: item.assist,
-      scope: item.scope,
-      objectType: item.objectType,
-      identifier: item.identifier,
-      buyingPrice: item.buyingPrice.toString(),
-      sellingPrice: item.sellingPrice.toString(),
-      profit: item.profit,
-      customerName: item.customerName,
-      address: item.address,
-      email: item.email,
-      date: item.date,
-      buyingSource: item.buyingSource || "",
-    })
-    setEditingId(item.id)
-    setShowModal(true)
+  const handleDelete = async (id, item) => {
+    if (currentUser && isSuperAdmin(currentUser.email)) {
+      if (window.confirm("Are you sure you want to delete this entry?")) {
+        try {
+          await deleteDoc(doc(db, "selling", id))
+          alert("Entry deleted successfully!")
+          fetchData()
+        } catch (error) {
+          console.error("Error deleting entry:", error)
+          alert("Error deleting entry. Please try again.")
+        }
+      }
+    } else {
+      if (window.confirm("This will send a delete request to the super admin for approval. Continue?")) {
+        try {
+          const requestData = {
+            action: "delete",
+            collection: "selling",
+            itemId: id,
+            itemDetails: item,
+            requestedBy: currentUser?.email || "unknown",
+          }
+
+          const result = await createApprovalRequest(requestData)
+          if (result.success) {
+            alert("Delete request sent to super admin for approval!")
+          } else {
+            alert("Error creating approval request.")
+          }
+        } catch (error) {
+          console.error("Error creating approval request:", error)
+          alert("Error sending request. Please try again.")
+        }
+      }
+    }
   }
 
   const resetForm = () => {
     setFormData({
       assist: "Vishwa",
-      scope: "Domestic",
-      objectType: "Vehicle",
-      identifier: "",
-      buyingPrice: "",
-      sellingPrice: "",
-      profit: 0,
-      customerName: "",
-      address: "",
-      email: "",
       date: new Date().toISOString().split("T")[0],
-      buyingSource: "",
+      buyingId: "",
+      sellingPrice: "",
+      profit: "",
+      country: "Sri Lanka",
+      customCountry: "",
+      invoiceNumber: "",
+      customerName: "",
+      customerEmail: "",
+      customerAddress: "",
     })
-  }
-
-  const getIdentifierLabel = () => {
-    switch (formData.objectType) {
-      case "Vehicle":
-        return "Enter chassis number"
-      case "Machinery":
-        return "Enter model number"
-      case "Parts":
-        return "Enter part name"
-      default:
-        return "Enter identifier"
-    }
   }
 
   const handleSort = (field) => {
@@ -215,30 +268,28 @@ const AdminSelling = () => {
       return (aVal - bVal) * modifier
     })
 
-  const handleGenerateReport = () => {
-    const headers = [
-      "Date",
-      "Assist",
-      "Scope",
-      "Type",
-      "Identifier",
-      "Buying Price",
-      "Selling Price",
-      "Profit",
-      "Customer",
-      "Email",
-    ]
+  const formatTime = (timestamp) => {
+    if (!timestamp) return "N/A"
+    if (timestamp.toMillis) {
+      return new Date(timestamp.toMillis()).toLocaleString()
+    }
+    return new Date(timestamp).toLocaleString()
+  }
+
+  const handleGenerateReport = async () => {
+    const headers = ["Date", "Time", "Assist", "Buying ID", "Selling Price (¥)", "Profit (¥)", "Country", "Customer Name", "Customer Email", "Customer Address", "Invoice Number"]
     const reportData = filteredAndSortedData.map((item) => [
       item.date,
+      formatTime(item.createdAt),
       item.assist,
-      item.scope,
-      item.objectType,
-      item.identifier,
-      `¥${item.buyingPrice.toLocaleString()}`,
+      item.buyingId,
       `¥${item.sellingPrice.toLocaleString()}`,
       `¥${item.profit.toLocaleString()}`,
-      item.customerName,
-      item.email,
+      item.country,
+      item.customerName || "-",
+      item.customerEmail || "-",
+      item.customerAddress || "-",
+      item.invoiceNumber,
     ])
 
     const totalProfit = filteredAndSortedData.reduce((sum, item) => sum + item.profit, 0)
@@ -247,7 +298,7 @@ const AdminSelling = () => {
       "Total Profit": `¥${totalProfit.toLocaleString()}`,
     }
 
-    generatePDF("Selling Report", headers, reportData, summary)
+    await generatePDF("Selling Report", headers, reportData, summary)
     generateExcel("Selling Report", headers, reportData, summary)
   }
 
@@ -275,15 +326,8 @@ const AdminSelling = () => {
               <button onClick={handleGenerateReport} className="btn btn-success me-2">
                 Generate Report
               </button>
-              <button
-                onClick={() => {
-                  setEditingId(null)
-                  resetForm()
-                  setShowModal(true)
-                }}
-                className="btn btn-primary"
-              >
-                Add New Sell
+              <button onClick={() => setShowModal(true)} className="btn btn-primary">
+                Add New Sale
               </button>
             </div>
           </div>
@@ -305,23 +349,21 @@ const AdminSelling = () => {
                   <th onClick={() => handleSort("date")} style={{ cursor: "pointer" }}>
                     Date {sortField === "date" && (sortDirection === "asc" ? "↑" : "↓")}
                   </th>
+                  <th>Time</th>
                   <th onClick={() => handleSort("assist")} style={{ cursor: "pointer" }}>
                     Assist {sortField === "assist" && (sortDirection === "asc" ? "↑" : "↓")}
                   </th>
-                  <th>Scope</th>
-                  <th>Type</th>
-                  <th>Identifier</th>
-                  <th onClick={() => handleSort("buyingPrice")} style={{ cursor: "pointer" }}>
-                    Buying Price {sortField === "buyingPrice" && (sortDirection === "asc" ? "↑" : "↓")}
-                  </th>
+                  <th>Buying ID</th>
                   <th onClick={() => handleSort("sellingPrice")} style={{ cursor: "pointer" }}>
-                    Selling Price {sortField === "sellingPrice" && (sortDirection === "asc" ? "↑" : "↓")}
+                    Selling Price (¥) {sortField === "sellingPrice" && (sortDirection === "asc" ? "↑" : "↓")}
                   </th>
                   <th onClick={() => handleSort("profit")} style={{ cursor: "pointer" }}>
-                    Profit {sortField === "profit" && (sortDirection === "asc" ? "↑" : "↓")}
+                    Profit (¥) {sortField === "profit" && (sortDirection === "asc" ? "↑" : "↓")}
                   </th>
-                  <th>Customer</th>
-                  <th>Email</th>
+                  <th>Country</th>
+                  <th>Customer Name</th>
+                  <th>Customer Address</th>
+                  <th>Invoice Number</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -336,24 +378,27 @@ const AdminSelling = () => {
                   filteredAndSortedData.map((item) => (
                     <tr key={item.id}>
                       <td>{item.date}</td>
+                      <td>{formatTime(item.createdAt)}</td>
                       <td>{item.assist}</td>
-                      <td>{item.scope}</td>
-                      <td>{item.objectType}</td>
-                      <td>{item.identifier}</td>
-                      <td>¥{item.buyingPrice.toLocaleString()}</td>
+                      <td>{item.buyingId}</td>
                       <td>¥{item.sellingPrice.toLocaleString()}</td>
-                      <td className={item.profit >= 0 ? "text-success" : "text-danger"}>
-                        ¥{item.profit.toLocaleString()}
-                      </td>
-                      <td>{item.customerName}</td>
-                      <td>{item.email}</td>
+                      <td className="text-success fw-bold">¥{item.profit.toLocaleString()}</td>
+                      <td>{item.country}</td>
+                      <td>{item.customerName || "-"}</td>
+                      <td>{item.customerAddress || "-"}</td>
+                      <td>{item.invoiceNumber}</td>
                       <td>
-                        <button onClick={() => handleEdit(item)} className="btn btn-sm btn-warning me-2">
-                          Edit
-                        </button>
-                        <button onClick={() => handleDeleteRequest(item.id)} className="btn btn-sm btn-danger">
-                          Delete
-                        </button>
+                        <div className="d-flex gap-2">
+                          <button onClick={() => handleGenerateInvoice(item)} className="btn btn-sm btn-info" title="Generate Invoice">
+                            📄
+                          </button>
+                          <button onClick={() => handleEdit(item)} className="btn btn-sm btn-warning">
+                            {currentUser && !isSuperAdmin(currentUser.email) ? "Request Edit" : "Edit"}
+                          </button>
+                          <button onClick={() => handleDelete(item.id, item)} className="btn btn-sm btn-danger">
+                            {currentUser && !isSuperAdmin(currentUser.email) ? "Request Delete" : "Delete"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -364,44 +409,25 @@ const AdminSelling = () => {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Add Modal */}
       {showModal && (
         <div className="modal-backdrop show">
           <div className="modal show d-block" tabIndex="-1">
             <div className="modal-dialog modal-lg modal-dialog-scrollable">
               <div className="modal-content">
                 <div className="modal-header">
-                  <h5 className="modal-title">{editingId ? "Edit Sell" : "Add New Sell"}</h5>
+                  <h5 className="modal-title">Add New Sale</h5>
                   <button
                     type="button"
                     className="btn-close"
                     onClick={() => {
                       setShowModal(false)
-                      setEditingId(null)
                       resetForm()
                     }}
                   ></button>
                 </div>
                 <div className="modal-body">
                   <form onSubmit={handleSubmit}>
-                    <div className="row">
-                      <div className="col-md-12 mb-3">
-                        <label className="form-label">Select from Buying Details (Optional)</label>
-                        <select
-                          className="form-select"
-                          value={formData.buyingSource}
-                          onChange={(e) => handleBuyingItemSelect(e.target.value)}
-                        >
-                          <option value="">-- Select to auto-populate --</option>
-                          {buyingItems.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.objectType} - {item.identifier} ({item.domesticSeller})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
                     <div className="row">
                       <div className="col-md-6 mb-3">
                         <label className="form-label">Assist</label>
@@ -417,52 +443,30 @@ const AdminSelling = () => {
                         </select>
                       </div>
                       <div className="col-md-6 mb-3">
-                        <label className="form-label">Scope</label>
-                        <select
-                          className="form-select"
-                          value={formData.scope}
-                          onChange={(e) => setFormData({ ...formData, scope: e.target.value })}
-                          required
-                        >
-                          <option value="Domestic">Domestic</option>
-                          <option value="International">International</option>
-                        </select>
-                      </div>
-                      <div className="col-md-6 mb-3">
-                        <label className="form-label">Object Type</label>
-                        <select
-                          className="form-select"
-                          value={formData.objectType}
-                          onChange={(e) => setFormData({ ...formData, objectType: e.target.value, identifier: "" })}
-                          required
-                        >
-                          <option value="Vehicle">Vehicle</option>
-                          <option value="Machinery">Machinery</option>
-                          <option value="Parts">Parts</option>
-                        </select>
-                      </div>
-                      <div className="col-md-6 mb-3">
-                        <label className="form-label">{getIdentifierLabel()}</label>
+                        <label className="form-label">Date</label>
                         <input
-                          type="text"
+                          type="date"
                           className="form-control"
-                          value={formData.identifier}
-                          onChange={(e) => setFormData({ ...formData, identifier: e.target.value })}
-                          placeholder={getIdentifierLabel()}
+                          value={formData.date}
+                          onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                           required
                         />
                       </div>
                       <div className="col-md-6 mb-3">
-                        <label className="form-label">Buying Price (¥)</label>
-                        <input
-                          type="number"
-                          className="form-control"
-                          value={formData.buyingPrice}
-                          onChange={(e) => setFormData({ ...formData, buyingPrice: e.target.value })}
+                        <label className="form-label">Buying ID</label>
+                        <select
+                          className="form-select"
+                          value={formData.buyingId}
+                          onChange={(e) => setFormData({ ...formData, buyingId: e.target.value })}
                           required
-                          min="0"
-                          step="0.01"
-                        />
+                        >
+                          <option value="">Select buying entry</option>
+                          {buyingItems.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.identifier} - {item.objectType} (¥{item.price})
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className="col-md-6 mb-3">
                         <label className="form-label">Selling Price (¥)</label>
@@ -476,44 +480,147 @@ const AdminSelling = () => {
                           step="0.01"
                         />
                       </div>
-                      <div className="col-md-12 mb-3">
-                        <label className="form-label">Profit (Auto-calculated)</label>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Profit (¥) - Auto Calculated</label>
                         <input
-                          type="text"
+                          type="number"
                           className="form-control"
-                          value={`¥${formData.profit.toLocaleString()}`}
-                          disabled
+                          value={formData.profit}
+                          readOnly
+                          style={{ backgroundColor: '#e9ecef' }}
+                          step="0.01"
                         />
+                        <small className="text-muted">Automatically calculated: Selling Price - Buying Price</small>
                       </div>
                       <div className="col-md-6 mb-3">
-                        <label className="form-label">Customer/Company Name</label>
+                        <label className="form-label">Country</label>
+                        <select
+                          className="form-select"
+                          value={formData.country}
+                          onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                          required
+                        >
+                          <option value="Sri Lanka">Sri Lanka</option>
+                          <option value="Japan">Japan</option>
+                          <option value="Custom">Other (Type Custom)</option>
+                        </select>
+                      </div>
+                      {formData.country === "Custom" && (
+                        <div className="col-md-6 mb-3">
+                          <label className="form-label">Custom Country</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            value={formData.customCountry}
+                            onChange={(e) => setFormData({ ...formData, customCountry: e.target.value })}
+                            placeholder="Enter country name"
+                            required
+                          />
+                        </div>
+                      )}
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Customer Name / Company Name</label>
                         <input
                           type="text"
                           className="form-control"
                           value={formData.customerName}
                           onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
+                          placeholder="Enter customer or company name"
                           required
                         />
                       </div>
                       <div className="col-md-6 mb-3">
-                        <label className="form-label">Email</label>
+                        <label className="form-label">Customer Email</label>
                         <input
                           type="email"
                           className="form-control"
-                          value={formData.email}
-                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                          value={formData.customerEmail}
+                          onChange={(e) => setFormData({ ...formData, customerEmail: e.target.value })}
+                          placeholder="Enter customer email"
                           required
                         />
                       </div>
-                      <div className="col-md-6 mb-3">
-                        <label className="form-label">Address</label>
+                      <div className="col-md-12 mb-3">
+                        <label className="form-label">Customer Address</label>
+                        <textarea
+                          className="form-control"
+                          value={formData.customerAddress}
+                          onChange={(e) => setFormData({ ...formData, customerAddress: e.target.value })}
+                          placeholder="Enter customer address"
+                          rows="3"
+                          required
+                        />
+                      </div>
+                      <div className="col-md-12 mb-3">
+                        <label className="form-label">Invoice Number</label>
                         <input
                           type="text"
                           className="form-control"
-                          value={formData.address}
-                          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                          value={formData.invoiceNumber}
+                          onChange={(e) => setFormData({ ...formData, invoiceNumber: e.target.value })}
+                          placeholder="Enter invoice number"
                           required
                         />
+                      </div>
+                    </div>
+                    <div className="modal-footer">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setShowModal(false)
+                          resetForm()
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn btn-primary">
+                        Add Sale
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="modal-backdrop show">
+          <div className="modal show d-block" tabIndex="-1">
+            <div className="modal-dialog modal-lg modal-dialog-scrollable">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">
+                    {currentUser && !isSuperAdmin(currentUser.email) ? "Request Edit" : "Edit Sale"}
+                  </h5>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    onClick={() => {
+                      setShowEditModal(false)
+                      setEditingItem(null)
+                      resetForm()
+                    }}
+                  ></button>
+                </div>
+                <div className="modal-body">
+                  <form onSubmit={handleUpdateSubmit}>
+                    <div className="row">
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Assist</label>
+                        <select
+                          className="form-select"
+                          value={formData.assist}
+                          onChange={(e) => setFormData({ ...formData, assist: e.target.value })}
+                          required
+                        >
+                          <option value="Vishwa">Vishwa</option>
+                          <option value="Dilshan">Dilshan</option>
+                          <option value="Saman">Saman</option>
+                        </select>
                       </div>
                       <div className="col-md-6 mb-3">
                         <label className="form-label">Date</label>
@@ -525,21 +632,131 @@ const AdminSelling = () => {
                           required
                         />
                       </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Buying ID</label>
+                        <select
+                          className="form-select"
+                          value={formData.buyingId}
+                          onChange={(e) => setFormData({ ...formData, buyingId: e.target.value })}
+                          required
+                        >
+                          <option value="">Select buying entry</option>
+                          {buyingItems.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.identifier} - {item.objectType} (¥{item.price})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Selling Price (¥)</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          value={formData.sellingPrice}
+                          onChange={(e) => setFormData({ ...formData, sellingPrice: e.target.value })}
+                          required
+                          min="0"
+                          step="0.01"
+                        />
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Profit (¥) - Auto Calculated</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          value={formData.profit}
+                          readOnly
+                          style={{ backgroundColor: '#e9ecef' }}
+                          step="0.01"
+                        />
+                        <small className="text-muted">Automatically calculated: Selling Price - Buying Price</small>
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Country</label>
+                        <select
+                          className="form-select"
+                          value={formData.country}
+                          onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                          required
+                        >
+                          <option value="Sri Lanka">Sri Lanka</option>
+                          <option value="Japan">Japan</option>
+                          <option value="Custom">Other (Type Custom)</option>
+                        </select>
+                      </div>
+                      {formData.country === "Custom" && (
+                        <div className="col-md-6 mb-3">
+                          <label className="form-label">Custom Country</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            value={formData.customCountry}
+                            onChange={(e) => setFormData({ ...formData, customCountry: e.target.value })}
+                            placeholder="Enter country name"
+                            required
+                          />
+                        </div>
+                      )}
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Customer Name / Company Name</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={formData.customerName}
+                          onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
+                          placeholder="Enter customer or company name"
+                          required
+                        />
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Customer Email</label>
+                        <input
+                          type="email"
+                          className="form-control"
+                          value={formData.customerEmail}
+                          onChange={(e) => setFormData({ ...formData, customerEmail: e.target.value })}
+                          placeholder="Enter customer email"
+                          required
+                        />
+                      </div>
+                      <div className="col-md-12 mb-3">
+                        <label className="form-label">Customer Address</label>
+                        <textarea
+                          className="form-control"
+                          value={formData.customerAddress}
+                          onChange={(e) => setFormData({ ...formData, customerAddress: e.target.value })}
+                          placeholder="Enter customer address"
+                          rows="3"
+                          required
+                        />
+                      </div>
+                      <div className="col-md-12 mb-3">
+                        <label className="form-label">Invoice Number</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={formData.invoiceNumber}
+                          onChange={(e) => setFormData({ ...formData, invoiceNumber: e.target.value })}
+                          placeholder="Enter invoice number"
+                          required
+                        />
+                      </div>
                     </div>
                     <div className="modal-footer">
                       <button
                         type="button"
                         className="btn btn-secondary"
                         onClick={() => {
-                          setShowModal(false)
-                          setEditingId(null)
+                          setShowEditModal(false)
+                          setEditingItem(null)
                           resetForm()
                         }}
                       >
                         Cancel
                       </button>
                       <button type="submit" className="btn btn-primary">
-                        {editingId ? "Request Edit" : "Add Sell"}
+                        {currentUser && !isSuperAdmin(currentUser.email) ? "Request Update" : "Update Sale"}
                       </button>
                     </div>
                   </form>

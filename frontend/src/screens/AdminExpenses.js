@@ -1,30 +1,40 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { collection, getDocs, addDoc, deleteDoc, doc, Timestamp } from "firebase/firestore"
+import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc, Timestamp } from "firebase/firestore"
 import AdminNavbar from "../components/AdminNavbar"
 import { generatePDF, generateExcel } from "../utils/reportGenerator"
-import { db } from "../firebase" // Import the db variable from firebase
+import { db, auth } from "../firebase"
+import { createApprovalRequest } from "../utils/approvalService"
+import { isSuperAdmin } from "../config/adminConfig"
 import "../styles/AdminTable.css"
 
 const AdminExpenses = () => {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState([])
   const [showModal, setShowModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [sortField, setSortField] = useState("date")
   const [sortDirection, setSortDirection] = useState("desc")
   const [uploading, setUploading] = useState(false)
+  const [currentUser, setCurrentUser] = useState(null)
+  const [editingItem, setEditingItem] = useState(null)
 
   const [formData, setFormData] = useState({
     assist: "Vishwa",
     amount: "",
     date: new Date().toISOString().split("T")[0],
     billNumber: "",
+    reason: "",
   })
 
   useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setCurrentUser(user)
+    })
     fetchData()
+    return () => unsubscribe()
   }, [])
 
   const fetchData = async () => {
@@ -55,6 +65,7 @@ const AdminExpenses = () => {
         amount: Number.parseFloat(formData.amount),
         date: formData.date,
         billNumber: formData.billNumber,
+        reason: formData.reason,
         createdAt: Timestamp.now(),
       }
 
@@ -72,15 +83,107 @@ const AdminExpenses = () => {
     }
   }
 
-  const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to delete this entry?")) {
+  const handleEdit = (item) => {
+    setEditingItem(item)
+    setFormData({
+      assist: item.assist,
+      amount: item.amount.toString(),
+      date: item.date,
+      billNumber: item.billNumber,
+      reason: item.reason || "",
+    })
+    setShowEditModal(true)
+  }
+
+  const handleUpdateSubmit = async (e) => {
+    e.preventDefault()
+
+    const updateData = {
+      assist: formData.assist,
+      amount: Number.parseFloat(formData.amount),
+      date: formData.date,
+      billNumber: formData.billNumber,
+      reason: formData.reason,
+    }
+
+    if (currentUser && isSuperAdmin(currentUser.email)) {
       try {
-        await deleteDoc(doc(db, "expenses", id))
-        alert("Entry deleted successfully!")
+        setUploading(true)
+        await updateDoc(doc(db, "expenses", editingItem.id), updateData)
+        alert("Entry updated successfully!")
+        setShowEditModal(false)
+        setEditingItem(null)
+        resetForm()
         fetchData()
       } catch (error) {
-        console.error("Error deleting entry:", error)
-        alert("Error deleting entry. Please try again.")
+        console.error("Error updating entry:", error)
+        alert("Error updating entry. Please try again.")
+      } finally {
+        setUploading(false)
+      }
+    } else {
+      try {
+        setUploading(true)
+        const requestData = {
+          action: "update",
+          collection: "expenses",
+          itemId: editingItem.id,
+          updateData,
+          itemDetails: editingItem,
+          requestedBy: currentUser?.email || "unknown",
+        }
+
+        const result = await createApprovalRequest(requestData)
+        if (result.success) {
+          alert("Update request sent to super admin for approval!")
+          setShowEditModal(false)
+          setEditingItem(null)
+          resetForm()
+        } else {
+          alert("Error creating approval request.")
+        }
+      } catch (error) {
+        console.error("Error creating approval request:", error)
+        alert("Error sending request. Please try again.")
+      } finally {
+        setUploading(false)
+      }
+    }
+  }
+
+  const handleDelete = async (id, item) => {
+    if (currentUser && isSuperAdmin(currentUser.email)) {
+      if (window.confirm("Are you sure you want to delete this entry?")) {
+        try {
+          await deleteDoc(doc(db, "expenses", id))
+          alert("Entry deleted successfully!")
+          fetchData()
+        } catch (error) {
+          console.error("Error deleting entry:", error)
+          alert("Error deleting entry. Please try again.")
+        }
+      }
+    } else {
+      if (window.confirm("This will send a delete request to the super admin for approval. Continue?")) {
+        try {
+          const requestData = {
+            action: "delete",
+            collection: "expenses",
+            itemId: id,
+            itemDetails: item,
+            requestedBy: currentUser?.email || "unknown",
+          }
+
+          const result = await createApprovalRequest(requestData)
+          if (result.success) {
+            alert("Delete request sent to super admin for approval!")
+          } else {
+            alert("Error creating approval request.")
+          }
+        } catch (error) {
+          console.error("Error creating approval request:", error)
+          alert("Error sending request. Please try again.")
+        }
       }
     }
   }
@@ -91,6 +194,7 @@ const AdminExpenses = () => {
       amount: "",
       date: new Date().toISOString().split("T")[0],
       billNumber: "",
+      reason: "",
     })
   }
 
@@ -118,13 +222,23 @@ const AdminExpenses = () => {
       return (aVal - bVal) * modifier
     })
 
-  const handleGenerateReport = () => {
-    const headers = ["Date", "Assist", "Amount (¥)", "Bill Number"]
+  const formatTime = (timestamp) => {
+    if (!timestamp) return "N/A"
+    if (timestamp.toMillis) {
+      return new Date(timestamp.toMillis()).toLocaleString()
+    }
+    return new Date(timestamp).toLocaleString()
+  }
+
+  const handleGenerateReport = async () => {
+    const headers = ["Date", "Time", "Assist", "Amount (¥)", "Bill Number", "Reason"]
     const reportData = filteredAndSortedData.map((item) => [
       item.date,
+      formatTime(item.createdAt),
       item.assist,
       `¥${item.amount.toLocaleString()}`,
       item.billNumber,
+      item.reason || "-",
     ])
 
     const totalExpenses = filteredAndSortedData.reduce((sum, item) => sum + item.amount, 0)
@@ -133,9 +247,9 @@ const AdminExpenses = () => {
       "Total Expenses": `¥${totalExpenses.toLocaleString()}`,
     }
 
-    generatePDF("Expenses Report", headers, reportData, summary)
-    generateExcel("Expenses Report", headers, reportData, summary)
-  }
+   await generatePDF("Expenses Report", headers, reportData, summary)
+  generateExcel("Expenses Report", headers, reportData, summary)
+}
 
   if (loading) {
     return (
@@ -184,6 +298,7 @@ const AdminExpenses = () => {
                   <th onClick={() => handleSort("date")} style={{ cursor: "pointer" }}>
                     Date {sortField === "date" && (sortDirection === "asc" ? "↑" : "↓")}
                   </th>
+                  <th>Time</th>
                   <th onClick={() => handleSort("assist")} style={{ cursor: "pointer" }}>
                     Assist {sortField === "assist" && (sortDirection === "asc" ? "↑" : "↓")}
                   </th>
@@ -191,13 +306,14 @@ const AdminExpenses = () => {
                     Amount (¥) {sortField === "amount" && (sortDirection === "asc" ? "↑" : "↓")}
                   </th>
                   <th>Bill Number</th>
+                  <th>Reason</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredAndSortedData.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="text-center py-4">
+                    <td colSpan="7" className="text-center py-4">
                       No data available
                     </td>
                   </tr>
@@ -205,12 +321,17 @@ const AdminExpenses = () => {
                   filteredAndSortedData.map((item) => (
                     <tr key={item.id}>
                       <td>{item.date}</td>
+                      <td>{formatTime(item.createdAt)}</td>
                       <td>{item.assist}</td>
                       <td className="text-danger fw-bold">¥{item.amount.toLocaleString()}</td>
                       <td>{item.billNumber}</td>
+                      <td>{item.reason || "-"}</td>
                       <td>
-                        <button onClick={() => handleDelete(item.id)} className="btn btn-sm btn-danger">
-                          Delete
+                        <button onClick={() => handleEdit(item)} className="btn btn-sm btn-warning me-2">
+                          {currentUser && !isSuperAdmin(currentUser.email) ? "Request Edit" : "Edit"}
+                        </button>
+                        <button onClick={() => handleDelete(item.id, item)} className="btn btn-sm btn-danger">
+                          {currentUser && !isSuperAdmin(currentUser.email) ? "Request Delete" : "Delete"}
                         </button>
                       </td>
                     </tr>
@@ -288,6 +409,17 @@ const AdminExpenses = () => {
                           required
                         />
                       </div>
+                      <div className="col-md-12 mb-3">
+                        <label className="form-label">Reason for Expense</label>
+                        <textarea
+                          className="form-control"
+                          rows="3"
+                          value={formData.reason}
+                          onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                          placeholder="Enter reason for this expense"
+                          required
+                        />
+                      </div>
                     </div>
                     <div className="modal-footer">
                       <button
@@ -312,6 +444,122 @@ const AdminExpenses = () => {
                           </>
                         ) : (
                           "Add Expense"
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Expense Modal */}
+      {showEditModal && (
+        <div className="modal-backdrop show">
+          <div className="modal show d-block" tabIndex="-1">
+            <div className="modal-dialog modal-lg">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">
+                    {currentUser && !isSuperAdmin(currentUser.email) ? "Request Edit" : "Edit Expense"}
+                  </h5>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    onClick={() => {
+                      setShowEditModal(false)
+                      setEditingItem(null)
+                      resetForm()
+                    }}
+                  ></button>
+                </div>
+                <div className="modal-body">
+                  <form onSubmit={handleUpdateSubmit}>
+                    <div className="row">
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Assist</label>
+                        <select
+                          className="form-select"
+                          value={formData.assist}
+                          onChange={(e) => setFormData({ ...formData, assist: e.target.value })}
+                          required
+                        >
+                          <option value="Vishwa">Vishwa</option>
+                          <option value="Dilshan">Dilshan</option>
+                          <option value="Saman">Saman</option>
+                        </select>
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Amount (¥)</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          value={formData.amount}
+                          onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                          required
+                          min="0"
+                          step="0.01"
+                        />
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Date</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={formData.date}
+                          onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Bill/Transaction/Tax Payment Number *</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={formData.billNumber}
+                          onChange={(e) => setFormData({ ...formData, billNumber: e.target.value })}
+                          placeholder="Required field"
+                          required
+                        />
+                      </div>
+                      <div className="col-md-12 mb-3">
+                        <label className="form-label">Reason for Expense</label>
+                        <textarea
+                          className="form-control"
+                          rows="3"
+                          value={formData.reason}
+                          onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                          placeholder="Enter reason for this expense"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="modal-footer">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setShowEditModal(false)
+                          setEditingItem(null)
+                          resetForm()
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn btn-primary" disabled={uploading}>
+                        {uploading ? (
+                          <>
+                            <span
+                              className="spinner-border spinner-border-sm me-2"
+                              role="status"
+                              aria-hidden="true"
+                            ></span>
+                            Processing...
+                          </>
+                        ) : (
+                          currentUser && !isSuperAdmin(currentUser.email) ? "Request Update" : "Update Expense"
                         )}
                       </button>
                     </div>

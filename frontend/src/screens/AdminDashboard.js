@@ -106,9 +106,9 @@ const AdminDashboard = () => {
     }
   }
 
-  const handleGenerateReport = () => {
-    generateDashboardReport(dashboardData)
-  }
+ const handleGenerateReport = async () => {
+  await generateDashboardReport(dashboardData)
+}
 
   // Pie chart data
   const pieChartData = [
@@ -163,7 +163,7 @@ const AdminDashboard = () => {
 
           {/* Main Action Cards */}
           <div className="dashboard-grid">
-            <Link to="/admin/selling" className="dashboard-card selling-card">
+            <Link to="/admin@shion/selling" className="dashboard-card selling-card">
               <div className="card-icon">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -186,7 +186,7 @@ const AdminDashboard = () => {
               <p className="card-amount">¥{dashboardData.totalSelling.toLocaleString()}</p>
             </Link>
 
-            <Link to="/admin/buying" className="dashboard-card buying-card">
+            <Link to="/admin@shion/buying" className="dashboard-card buying-card">
               <div className="card-icon">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -209,7 +209,7 @@ const AdminDashboard = () => {
               <p className="card-amount">¥{dashboardData.totalBuying.toLocaleString()}</p>
             </Link>
 
-            <Link to="/admin/revenue" className="dashboard-card revenue-card">
+            <Link to="/admin@shion/revenue" className="dashboard-card revenue-card">
               <div className="card-icon">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -231,7 +231,7 @@ const AdminDashboard = () => {
               <p className="card-amount">¥{dashboardData.totalRevenue.toLocaleString()}</p>
             </Link>
 
-            <Link to="/admin/expenses" className="dashboard-card expenses-card">
+            <Link to="/admin@shion/expenses" className="dashboard-card expenses-card">
               <div className="card-icon">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"

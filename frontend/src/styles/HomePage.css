@@ -2,6 +2,7 @@
 body {
   background-color: #121212; /* Dark background */
   color: #ffffff; /* White text */
+  font-size: 16px; /* Base font size increased */
 }
 
 /* Header Section */
@@ -16,11 +17,26 @@ body {
   transition: background-image 1s ease-in-out;
 }
 
+/* Header Title - Make it white and larger like ContactUs */
+.header-section h1 {
+  color: #ffffff !important;
+  font-size: 4rem !important;
+  font-weight: bold;
+}
+
+/* Header Lead Text */
+.header-section .lead {
+  font-size: 1.5rem;
+  color: #ffffff;
+}
+
 /* Button */
 .btn.custom-btn {
   background-color: #f8c146; /* Orange */
   border: none;
   color: #121212;
+  font-size: 1.1rem;
+  padding: 12px 30px;
 }
 
 .btn.custom-btn:hover {
@@ -34,6 +50,22 @@ body {
   filter: invert(100%);
 }
 
+/* Section Titles */
+.section-title {
+  color: #f8c146;
+  font-size: 2.5rem;
+  font-weight: bold;
+}
+
+/* Paragraph Text - Increased font size */
+.about-us-section p,
+.vision-section p,
+.mission-section p,
+.services-section p {
+  font-size: 1.2rem;
+  line-height: 1.8;
+}
+
 /* Vision & Mission Sections */
 .vision-box,
 .mission-section img {
@@ -41,11 +73,7 @@ body {
   color: #f8c146;
 }
 
-.section-title {
-  color: #f8c146;
-}
-
-/* Vision Section - Vision Box Hover */
+/* Vision Section - Vision Box */
 .vision-box {
   border: 2px solid #444444;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
@@ -54,22 +82,42 @@ body {
   transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
+.vision-box h5 {
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: #ffffff !important;
+}
+
+.vision-box p {
+  font-size: 1.1rem;
+}
+
 .vision-box:hover {
-  transform: scale(1.05); /* Slightly enlarges the box */
-  box-shadow: 0px 8px 20px rgba(0, 0, 0, 0.5); /* Increases shadow intensity */
-  background-color: #383838; /* Slightly lighter background */
-  color: #ffffff; /* Change text color on hover */
+  transform: scale(1.05);
+  box-shadow: 0px 8px 20px rgba(0, 0, 0, 0.5);
+  background-color: #383838;
+  color: #ffffff;
+}
+
+/* Mission and Services Section Headings */
+.mission-section h5,
+.services-section h5 {
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: #f8c146;
+  margin-top: 15px;
 }
 
 .mission-section img,
 .services-section img {
   border: 3px solid #f8c146;
-  border-radius: 50%; /* Makes images round */
-  width: 130px; /* Optional: Set a fixed size for the images */
-  height: 130px; /* Optional: Set a fixed size for the images */
-  object-fit: cover; /* Ensures the images cover the circular area without stretching */
+  border-radius: 50%;
+  width: 130px;
+  height: 130px;
+  object-fit: cover;
 }
 
+/* Brand Logo */
 .brand-logo {
   width: 130px;
   height: 130px;
@@ -81,13 +129,42 @@ body {
 .brand-logo:hover {
   transform: scale(1.2);
   box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.2);
-  border-color: #113805; /* Match your theme color */
+  border-color: #113805;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .header-section h1 {
+    font-size: 2.5rem !important;
+  }
+
+  .header-section .lead {
+    font-size: 1.2rem;
+  }
+
+  .section-title {
+    font-size: 2rem;
+  }
+
+  .about-us-section p,
+  .vision-section p,
+  .mission-section p,
+  .services-section p {
+    font-size: 1rem;
+  }
+
+  .vision-box h5,
+  .mission-section h5,
+  .services-section h5 {
+    font-size: 1.2rem;
+  }
 }
 
 /* Footer Section */
 footer {
   background-color: #343a40;
   color: #f8c146;
+  font-size: 1rem;
 }
 
 footer a {

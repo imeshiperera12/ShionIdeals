@@ -1,19 +1,24 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { collection, getDocs, addDoc, deleteDoc, doc, Timestamp } from "firebase/firestore"
-import { db } from "../firebase"
+import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc, Timestamp } from "firebase/firestore"
+import { db, auth } from "../firebase"
 import AdminNavbar from "../components/AdminNavbar"
 import { generatePDF, generateExcel } from "../utils/reportGenerator"
+import { createApprovalRequest } from "../utils/approvalService"
+import { isSuperAdmin } from "../config/adminConfig"
 import "../styles/AdminTable.css"
 
 const AdminBuying = () => {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState([])
   const [showModal, setShowModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [sortField, setSortField] = useState("date")
   const [sortDirection, setSortDirection] = useState("desc")
+  const [currentUser, setCurrentUser] = useState(null)
+  const [editingItem, setEditingItem] = useState(null)
 
   const [formData, setFormData] = useState({
     assist: "Vishwa",
@@ -27,7 +32,11 @@ const AdminBuying = () => {
   })
 
   useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setCurrentUser(user)
+    })
     fetchData()
+    return () => unsubscribe()
   }, [])
 
   const fetchData = async () => {
@@ -69,15 +78,107 @@ const AdminBuying = () => {
     }
   }
 
-  const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to delete this entry?")) {
+  const handleEdit = (item) => {
+    setEditingItem(item)
+    setFormData({
+      assist: item.assist,
+      date: item.date,
+      objectType: item.objectType,
+      identifier: item.identifier,
+      market: item.market,
+      webSubOption: item.webSubOption || "",
+      domesticSeller: item.domesticSeller || "",
+      price: item.price.toString(),
+    })
+    setShowEditModal(true)
+  }
+
+  const handleUpdateSubmit = async (e) => {
+    e.preventDefault()
+
+    const updateData = {
+      assist: formData.assist,
+      date: formData.date,
+      objectType: formData.objectType,
+      identifier: formData.identifier,
+      market: formData.market,
+      webSubOption: formData.webSubOption,
+      domesticSeller: formData.domesticSeller,
+      price: Number.parseFloat(formData.price),
+    }
+
+    if (currentUser && isSuperAdmin(currentUser.email)) {
       try {
-        await deleteDoc(doc(db, "buying", id))
-        alert("Entry deleted successfully!")
+        await updateDoc(doc(db, "buying", editingItem.id), updateData)
+        alert("Entry updated successfully!")
+        setShowEditModal(false)
+        setEditingItem(null)
+        resetForm()
         fetchData()
       } catch (error) {
-        console.error("Error deleting entry:", error)
-        alert("Error deleting entry. Please try again.")
+        console.error("Error updating entry:", error)
+        alert("Error updating entry. Please try again.")
+      }
+    } else {
+      try {
+        const requestData = {
+          action: "update",
+          collection: "buying",
+          itemId: editingItem.id,
+          updateData,
+          itemDetails: editingItem,
+          requestedBy: currentUser?.email || "unknown",
+        }
+
+        const result = await createApprovalRequest(requestData)
+        if (result.success) {
+          alert("Update request sent to super admin for approval!")
+          setShowEditModal(false)
+          setEditingItem(null)
+          resetForm()
+        } else {
+          alert("Error creating approval request.")
+        }
+      } catch (error) {
+        console.error("Error creating approval request:", error)
+        alert("Error sending request. Please try again.")
+      }
+    }
+  }
+
+  const handleDelete = async (id, item) => {
+    if (currentUser && isSuperAdmin(currentUser.email)) {
+      if (window.confirm("Are you sure you want to delete this entry?")) {
+        try {
+          await deleteDoc(doc(db, "buying", id))
+          alert("Entry deleted successfully!")
+          fetchData()
+        } catch (error) {
+          console.error("Error deleting entry:", error)
+          alert("Error deleting entry. Please try again.")
+        }
+      }
+    } else {
+      if (window.confirm("This will send a delete request to the super admin for approval. Continue?")) {
+        try {
+          const requestData = {
+            action: "delete",
+            collection: "buying",
+            itemId: id,
+            itemDetails: item,
+            requestedBy: currentUser?.email || "unknown",
+          }
+
+          const result = await createApprovalRequest(requestData)
+          if (result.success) {
+            alert("Delete request sent to super admin for approval!")
+          } else {
+            alert("Error creating approval request. Please try again.")
+          }
+        } catch (error) {
+          console.error("Error creating approval request:", error)
+          alert("Error sending request. Please try again.")
+        }
       }
     }
   }
@@ -98,7 +199,7 @@ const AdminBuying = () => {
   const getIdentifierLabel = () => {
     switch (formData.objectType) {
       case "Vehicle":
-        return "Enter chassis number"
+        return "Enter chassis number or model number"
       case "Machinery":
         return "Enter model number"
       case "Parts":
@@ -132,16 +233,25 @@ const AdminBuying = () => {
       return (aVal - bVal) * modifier
     })
 
-  const handleGenerateReport = () => {
-    const headers = ["Date", "Assist", "Type", "Identifier", "Market", "Web Option", "Domestic Seller", "Price"]
+  const formatTime = (timestamp) => {
+    if (!timestamp) return "N/A"
+    if (timestamp.toMillis) {
+      return new Date(timestamp.toMillis()).toLocaleString()
+    }
+    return new Date(timestamp).toLocaleString()
+  }
+
+const handleGenerateReport = async () => {
+    const headers = ["Date", "Time", "Assist", "Type", "Identifier", "Market", "Web Option", "Domestic Seller", "Price (¥)"]
     const reportData = filteredAndSortedData.map((item) => [
       item.date,
+      formatTime(item.createdAt),
       item.assist,
       item.objectType,
       item.identifier,
       item.market,
       item.webSubOption || "-",
-      item.domesticSeller,
+      item.domesticSeller || "-",
       `¥${item.price.toLocaleString()}`,
     ])
 
@@ -151,9 +261,9 @@ const AdminBuying = () => {
       "Total Buying Amount": `¥${totalPrice.toLocaleString()}`,
     }
 
-    generatePDF("Buying Report", headers, reportData, summary)
-    generateExcel("Buying Report", headers, reportData, summary)
-  }
+    await generatePDF("Buying Report", headers, reportData, summary)
+  generateExcel("Buying Report", headers, reportData, summary)
+}
 
   if (loading) {
     return (
@@ -202,6 +312,7 @@ const AdminBuying = () => {
                   <th onClick={() => handleSort("date")} style={{ cursor: "pointer" }}>
                     Date {sortField === "date" && (sortDirection === "asc" ? "↑" : "↓")}
                   </th>
+                  <th>Time</th>
                   <th onClick={() => handleSort("assist")} style={{ cursor: "pointer" }}>
                     Assist {sortField === "assist" && (sortDirection === "asc" ? "↑" : "↓")}
                   </th>
@@ -211,7 +322,7 @@ const AdminBuying = () => {
                   <th>Web Option</th>
                   <th>Domestic Seller</th>
                   <th onClick={() => handleSort("price")} style={{ cursor: "pointer" }}>
-                    Price {sortField === "price" && (sortDirection === "asc" ? "↑" : "↓")}
+                    Price (¥) {sortField === "price" && (sortDirection === "asc" ? "↑" : "↓")}
                   </th>
                   <th>Actions</th>
                 </tr>
@@ -219,7 +330,7 @@ const AdminBuying = () => {
               <tbody>
                 {filteredAndSortedData.length === 0 ? (
                   <tr>
-                    <td colSpan="9" className="text-center py-4">
+                    <td colSpan="10" className="text-center py-4">
                       No data available
                     </td>
                   </tr>
@@ -227,17 +338,23 @@ const AdminBuying = () => {
                   filteredAndSortedData.map((item) => (
                     <tr key={item.id}>
                       <td>{item.date}</td>
+                      <td>{formatTime(item.createdAt)}</td>
                       <td>{item.assist}</td>
                       <td>{item.objectType}</td>
                       <td>{item.identifier}</td>
                       <td>{item.market}</td>
                       <td>{item.webSubOption || "-"}</td>
-                      <td>{item.domesticSeller}</td>
+                      <td>{item.domesticSeller || "-"}</td>
                       <td>¥{item.price.toLocaleString()}</td>
                       <td>
-                        <button onClick={() => handleDelete(item.id)} className="btn btn-sm btn-danger">
-                          Delete
-                        </button>
+                        <div className="d-flex gap-2">
+                          <button onClick={() => handleEdit(item)} className="btn btn-sm btn-warning">
+                            {currentUser && !isSuperAdmin(currentUser.email) ? "Request Edit" : "Edit"}
+                          </button>
+                          <button onClick={() => handleDelete(item.id, item)} className="btn btn-sm btn-danger">
+                            {currentUser && !isSuperAdmin(currentUser.email) ? "Request Delete" : "Delete"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -248,7 +365,7 @@ const AdminBuying = () => {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Add Modal */}
       {showModal && (
         <div className="modal-backdrop show">
           <div className="modal show d-block" tabIndex="-1">
@@ -277,8 +394,8 @@ const AdminBuying = () => {
                           required
                         >
                           <option value="Vishwa">Vishwa</option>
-                          <option value="Dilshan">Dilshan</option>
-                          <option value="Saman">Saman</option>
+                        <option value="Dilshan">Dilshan (dilaheraz1@gmail.com)</option>
+<option value="Saman">Saman (samanslk10@gmail.com)</option>
                         </select>
                       </div>
                       <div className="col-md-6 mb-3">
@@ -320,11 +437,12 @@ const AdminBuying = () => {
                         <select
                           className="form-select"
                           value={formData.market}
-                          onChange={(e) => setFormData({ ...formData, market: e.target.value, webSubOption: "" })}
+                          onChange={(e) => setFormData({ ...formData, market: e.target.value, webSubOption: "", domesticSeller: "" })}
                           required
                         >
                           <option value="Auction">Auction</option>
                           <option value="Web">Web</option>
+                          <option value="Domestic Seller">Domestic Seller</option>
                         </select>
                       </div>
                       {formData.market === "Web" && (
@@ -342,16 +460,19 @@ const AdminBuying = () => {
                           </select>
                         </div>
                       )}
-                      <div className="col-md-6 mb-3">
-                        <label className="form-label">Domestic Seller</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          value={formData.domesticSeller}
-                          onChange={(e) => setFormData({ ...formData, domesticSeller: e.target.value })}
-                          required
-                        />
-                      </div>
+                      {formData.market === "Domestic Seller" && (
+                        <div className="col-md-6 mb-3">
+                          <label className="form-label">Domestic Seller Name</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            value={formData.domesticSeller}
+                            onChange={(e) => setFormData({ ...formData, domesticSeller: e.target.value })}
+                            placeholder="Enter domestic seller name"
+                            required
+                          />
+                        </div>
+                      )}
                       <div className="col-md-6 mb-3">
                         <label className="form-label">Price (¥)</label>
                         <input
@@ -378,6 +499,154 @@ const AdminBuying = () => {
                       </button>
                       <button type="submit" className="btn btn-primary">
                         Add Purchase
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="modal-backdrop show">
+          <div className="modal show d-block" tabIndex="-1">
+            <div className="modal-dialog modal-lg modal-dialog-scrollable">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">
+                    {currentUser && !isSuperAdmin(currentUser.email) ? "Request Edit" : "Edit Purchase"}
+                  </h5>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    onClick={() => {
+                      setShowEditModal(false)
+                      setEditingItem(null)
+                      resetForm()
+                    }}
+                  ></button>
+                </div>
+                <div className="modal-body">
+                  <form onSubmit={handleUpdateSubmit}>
+                    <div className="row">
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Assist</label>
+                        <select
+                          className="form-select"
+                          value={formData.assist}
+                          onChange={(e) => setFormData({ ...formData, assist: e.target.value })}
+                          required
+                        >
+                          <option value="Vishwa">Vishwa</option>
+                          <option value="Dilshan">Dilshan</option>
+                          <option value="Saman">Saman</option>
+                        </select>
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Date</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={formData.date}
+                          onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Object Type</label>
+                        <select
+                          className="form-select"
+                          value={formData.objectType}
+                          onChange={(e) => setFormData({ ...formData, objectType: e.target.value })}
+                          required
+                        >
+                          <option value="Vehicle">Vehicle</option>
+                          <option value="Machinery">Machinery</option>
+                          <option value="Parts">Parts</option>
+                        </select>
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">{getIdentifierLabel()}</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={formData.identifier}
+                          onChange={(e) => setFormData({ ...formData, identifier: e.target.value })}
+                          placeholder={getIdentifierLabel()}
+                          required
+                        />
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Market</label>
+                        <select
+                          className="form-select"
+                          value={formData.market}
+                          onChange={(e) => setFormData({ ...formData, market: e.target.value })}
+                          required
+                        >
+                          <option value="Auction">Auction</option>
+                          <option value="Web">Web</option>
+                          <option value="Domestic Seller">Domestic Seller</option>
+                        </select>
+                      </div>
+                      {formData.market === "Web" && (
+                        <div className="col-md-6 mb-3">
+                          <label className="form-label">Web Option</label>
+                          <select
+                            className="form-select"
+                            value={formData.webSubOption}
+                            onChange={(e) => setFormData({ ...formData, webSubOption: e.target.value })}
+                            required
+                          >
+                            <option value="">Select option</option>
+                            <option value="fb">Facebook</option>
+                            <option value="yahoo_out">Yahoo Out</option>
+                          </select>
+                        </div>
+                      )}
+                      {formData.market === "Domestic Seller" && (
+                        <div className="col-md-6 mb-3">
+                          <label className="form-label">Domestic Seller Name</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            value={formData.domesticSeller}
+                            onChange={(e) => setFormData({ ...formData, domesticSeller: e.target.value })}
+                            placeholder="Enter domestic seller name"
+                            required
+                          />
+                        </div>
+                      )}
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Price (¥)</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          value={formData.price}
+                          onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                          required
+                          min="0"
+                          step="0.01"
+                        />
+                      </div>
+                    </div>
+                    <div className="modal-footer">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setShowEditModal(false)
+                          setEditingItem(null)
+                          resetForm()
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn btn-primary">
+                        {currentUser && !isSuperAdmin(currentUser.email) ? "Request Update" : "Update Purchase"}
                       </button>
                     </div>
                   </form>
