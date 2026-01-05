@@ -21,6 +21,8 @@ const AdminSelling = () => {
   const [buyingItems, setBuyingItems] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
   const [editingItem, setEditingItem] = useState(null)
+  const [totalProfit, setTotalProfit] = useState(0)
+  const [selectedMonth, setSelectedMonth] = useState("all")
 
   const [formData, setFormData] = useState({
     assist: "Vishwa",
@@ -46,6 +48,10 @@ const AdminSelling = () => {
   }, [])
 
   useEffect(() => {
+    calculateTotal()
+  }, [data, selectedMonth])
+
+  useEffect(() => {
     if (formData.buyingId && formData.sellingPrice) {
       const selectedBuying = buyingItems.find(item => item.id === formData.buyingId)
       if (selectedBuying) {
@@ -56,6 +62,20 @@ const AdminSelling = () => {
       }
     }
   }, [formData.buyingId, formData.sellingPrice, buyingItems])
+
+  const calculateTotal = () => {
+    let filtered = data
+    if (selectedMonth !== "all") {
+      filtered = data.filter(item => {
+        const itemDate = new Date(item.date)
+        const [year, month] = selectedMonth.split("-")
+        return itemDate.getFullYear() === parseInt(year) && 
+               itemDate.getMonth() + 1 === parseInt(month)
+      })
+    }
+    const total = filtered.reduce((sum, item) => sum + (parseFloat(item.profit) || 0), 0)
+    setTotalProfit(total)
+  }
 
   const fetchData = async () => {
     try {
@@ -329,6 +349,33 @@ const AdminSelling = () => {
               <button onClick={() => setShowModal(true)} className="btn btn-primary">
                 Add New Sale
               </button>
+            </div>
+          </div>
+
+          <div className="alert alert-info mb-3" role="alert">
+            <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
+              <div>
+                <strong>Total Profit:</strong>
+                <span className="fs-4 fw-bold ms-2 text-success">¥{totalProfit.toLocaleString()}</span>
+              </div>
+              <div>
+                <label className="form-label me-2 mb-0" style={{ fontSize: '11px' }}>Filter by Month:</label>
+                <select 
+                  className="form-select form-select-sm d-inline-block" 
+                  style={{ width: 'auto' }}
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                >
+                  <option value="all">All Time</option>
+                  {[...Array(12)].map((_, i) => {
+                    const date = new Date()
+                    date.setMonth(date.getMonth() - i)
+                    const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+                    const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                    return <option key={value} value={value}>{label}</option>
+                  })}
+                </select>
+              </div>
             </div>
           </div>
 
