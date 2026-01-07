@@ -23,6 +23,7 @@ import "../styles/AdminDashboard.css"
 
 const AdminDashboard = () => {
   const [loading, setLoading] = useState(true)
+  const [selectedMonth, setSelectedMonth] = useState("all")
   const [dashboardData, setDashboardData] = useState({
     totalRevenue: 0,
     totalSelling: 0,
@@ -38,7 +39,18 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     fetchDashboardData()
-  }, [])
+  }, [selectedMonth])
+
+  const filterByMonth = (items) => {
+    if (selectedMonth === "all") return items
+
+    return items.filter(item => {
+      const itemDate = new Date(item.date)
+      const [year, month] = selectedMonth.split("-")
+      return itemDate.getFullYear() === parseInt(year) && 
+             itemDate.getMonth() + 1 === parseInt(month)
+    })
+  }
 
   const fetchDashboardData = async () => {
     try {
@@ -52,11 +64,37 @@ const AdminDashboard = () => {
         getDocs(collection(db, "expenses")),
       ])
 
+      // Convert to arrays
+      const sellingItems = []
+      sellingSnap.forEach((doc) => {
+        sellingItems.push({ id: doc.id, ...doc.data() })
+      })
+
+      const buyingItems = []
+      buyingSnap.forEach((doc) => {
+        buyingItems.push({ id: doc.id, ...doc.data() })
+      })
+
+      const revenueItems = []
+      revenueSnap.forEach((doc) => {
+        revenueItems.push({ id: doc.id, ...doc.data() })
+      })
+
+      const expensesItems = []
+      expensesSnap.forEach((doc) => {
+        expensesItems.push({ id: doc.id, ...doc.data() })
+      })
+
+      // Filter by selected month
+      const filteredSelling = filterByMonth(sellingItems)
+      const filteredBuying = filterByMonth(buyingItems)
+      const filteredRevenue = filterByMonth(revenueItems)
+      const filteredExpenses = filterByMonth(expensesItems)
+
       // Calculate selling data
       let sellingProfit = 0
       let totalSelling = 0
-      sellingSnap.forEach((doc) => {
-        const data = doc.data()
+      filteredSelling.forEach((data) => {
         const profit = Number.parseFloat(data.profit) || 0
         const selling = Number.parseFloat(data.sellingPrice) || 0
         sellingProfit += profit
@@ -65,22 +103,19 @@ const AdminDashboard = () => {
 
       // Calculate buying data
       let totalBuying = 0
-      buyingSnap.forEach((doc) => {
-        const data = doc.data()
+      filteredBuying.forEach((data) => {
         totalBuying += Number.parseFloat(data.price) || 0
       })
 
       // Calculate revenue data
       let totalRevenue = 0
-      revenueSnap.forEach((doc) => {
-        const data = doc.data()
+      filteredRevenue.forEach((data) => {
         totalRevenue += Number.parseFloat(data.amount) || 0
       })
 
       // Calculate expenses data
       let totalExpenses = 0
-      expensesSnap.forEach((doc) => {
-        const data = doc.data()
+      filteredExpenses.forEach((data) => {
         totalExpenses += Number.parseFloat(data.amount) || 0
       })
 
@@ -94,10 +129,10 @@ const AdminDashboard = () => {
         totalExpenses,
         sellingProfit,
         balance,
-        sellingCount: sellingSnap.size,
-        buyingCount: buyingSnap.size,
-        revenueCount: revenueSnap.size,
-        expensesCount: expensesSnap.size,
+        sellingCount: filteredSelling.length,
+        buyingCount: filteredBuying.length,
+        revenueCount: filteredRevenue.length,
+        expensesCount: filteredExpenses.length,
       })
     } catch (error) {
       console.error("Error fetching dashboard data:", error)
@@ -106,9 +141,9 @@ const AdminDashboard = () => {
     }
   }
 
- const handleGenerateReport = async () => {
-  await generateDashboardReport(dashboardData)
-}
+  const handleGenerateReport = async () => {
+    await generateDashboardReport(dashboardData)
+  }
 
   // Pie chart data
   const pieChartData = [
@@ -150,10 +185,32 @@ const AdminDashboard = () => {
             </button>
           </div>
 
-          {/* Current Balance Card */}
+          {/* Current Balance Card with Month Filter */}
           <div className="balance-card">
             <div className="balance-content">
-              <h3>Current Balance</h3>
+              <div className="d-flex justify-content-between align-items-start mb-3">
+                <h3>Current Balance</h3>
+                <div>
+                  <label className="form-label me-2 mb-0" style={{ fontSize: '11px', color: 'var(--admin-text-muted)' }}>
+                    Filter by Month:
+                  </label>
+                  <select 
+                    className="form-select form-select-sm d-inline-block" 
+                    style={{ width: 'auto' }}
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                  >
+                    <option value="all">All Time</option>
+                    {[...Array(12)].map((_, i) => {
+                      const date = new Date()
+                      date.setMonth(date.getMonth() - i)
+                      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+                      const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                      return <option key={value} value={value}>{label}</option>
+                    })}
+                  </select>
+                </div>
+              </div>
               <div className={`balance-amount ${dashboardData.balance >= 0 ? "positive" : "negative"}`}>
                 ¥{dashboardData.balance.toLocaleString()}
               </div>
