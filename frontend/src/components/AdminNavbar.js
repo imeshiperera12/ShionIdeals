@@ -5,7 +5,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom"
 import { signOut } from "firebase/auth"
 import { auth } from "../firebase"
 import { loadTheme, saveTheme } from "../utils/themeManager"
-import { isSuperAdmin } from "../config/adminConfig"
+import { isSuperAdmin, canManageCustomers } from "../config/adminConfig"
 import { fetchPendingApprovals } from "../utils/approvalService"
 import "../styles/AdminSidebar.css"
 
@@ -109,6 +109,7 @@ const AdminNavbar = () => {
 
   const isActive = (path) => location.pathname === path
 
+  // Base menu items available to all admins
   const menuItems = [
     { label: "Dashboard", path: "/admin@shion/dashboard" },
     { label: "Selling", path: "/admin@shion/selling" },
@@ -116,6 +117,14 @@ const AdminNavbar = () => {
     { label: "Revenue", path: "/admin@shion/revenue" },
     { label: "Expenses", path: "/admin@shion/expenses" },
   ]
+
+  // Add Customer Management for authorized users (Imeshi, Vishwa, Dilshan)
+  if (currentUser && canManageCustomers(currentUser.email)) {
+    menuItems.push({ 
+      label: "Customer Management", 
+      path: "/admin@shion/customers"
+    })
+  }
 
   // Add approval panel for super admin
   if (currentUser && isSuperAdmin(currentUser.email)) {

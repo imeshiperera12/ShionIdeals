@@ -16,13 +16,22 @@ import AdminExpenses from "./screens/AdminExpenses"
 import ProtectedRoute from "./components/ProtectedRoute"
 import AdminApprovalPanel from "./screens/AdminApprovalPanel"
 import AdminMyRequests from "./screens/AdminMyRequests"
+import AdminCustomers from "./screens/AdminCustomers"
+import CustomerDashboard from "./screens/CustomerDashboard"
+import CustomerSelling from "./screens/CustomerSelling"
+import CustomerBuying from "./screens/CustomerBuying"
+import CustomerRevenue from "./screens/CustomerRevenue"
+import CustomerExpenses from "./screens/CustomerExpenses"
 
 function App() {
   return (
     <Router>
       <div className="App">
         <Routes>
+          {/* Admin Login */}
           <Route path="/admin@shion" element={<AdminLogin />} />
+          
+          {/* Admin Main Routes */}
           <Route
             path="/admin@shion/dashboard"
             element={
@@ -63,8 +72,74 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="/admin@shion/approvals" element={<AdminApprovalPanel />} />
-<Route path="/admin@shion/my-requests" element={<AdminMyRequests />} />
+          
+          {/* Approval and Request Routes */}
+          <Route 
+            path="/admin@shion/approvals" 
+            element={
+              <ProtectedRoute>
+                <AdminApprovalPanel />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin@shion/my-requests" 
+            element={
+              <ProtectedRoute>
+                <AdminMyRequests />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Customer Management Routes */}
+          <Route 
+            path="/admin@shion/customers" 
+            element={
+              <ProtectedRoute>
+                <AdminCustomers />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin@shion/customer/:customerId" 
+            element={
+              <ProtectedRoute>
+                <CustomerDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin@shion/customer/:customerId/selling" 
+            element={
+              <ProtectedRoute>
+                <CustomerSelling />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin@shion/customer/:customerId/buying" 
+            element={
+              <ProtectedRoute>
+                <CustomerBuying />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin@shion/customer/:customerId/revenue" 
+            element={
+              <ProtectedRoute>
+                <CustomerRevenue />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin@shion/customer/:customerId/expenses" 
+            element={
+              <ProtectedRoute>
+                <CustomerExpenses />
+              </ProtectedRoute>
+            } 
+          />
 
           {/* User-side routes with navbar and footer */}
           <Route

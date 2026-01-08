@@ -1,57 +1,22 @@
-/* Admin Layout Container */
 .admin-layout {
-  display: flex;
-  height: 100vh;
-  width: 100%;
-  background-color: var(--admin-bg);
-}
-
-.admin-main {
-  flex: 1;
-  margin-left: 240px;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-  transition: margin-left 0.3s ease;
 }
 
-.admin-main.sidebar-collapsed {
-  margin-left: 80px;
-}
-
-.admin-content {
+.admin-content-wrapper {
+  display: flex;
   flex: 1;
-  overflow-y: auto;
+  margin-top: 70px; /* Height of navbar */
+}
+
+.admin-main-content {
+  flex: 1;
+  overflow-x: hidden;
   background-color: var(--admin-bg);
-  color: var(--admin-text);
 }
 
-/* Scrollbar styling */
-.admin-content::-webkit-scrollbar {
-  width: 8px;
-}
-
-.admin-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.admin-content::-webkit-scrollbar-thumb {
-  background: var(--admin-border);
-  border-radius: 4px;
-}
-
-.admin-content::-webkit-scrollbar-thumb:hover {
-  background: var(--admin-primary);
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .admin-main {
-    margin-left: 0;
-  }
-
-  .admin-main.sidebar-collapsed {
-    margin-left: 0;
-  }
+/* Dark mode support */
+.admin-dark-mode .admin-main-content {
+  background-color: var(--admin-bg-dark);
 }

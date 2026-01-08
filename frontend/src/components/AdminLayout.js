@@ -1,12 +1,18 @@
+"use client"
+
 import AdminNavbar from "./AdminNavbar"
+import AdminSidebar from "./AdminSidebar"
 import "../styles/AdminLayout.css"
 
 const AdminLayout = ({ children }) => {
   return (
     <div className="admin-layout">
-      <div className="admin-main">
-        <AdminNavbar />
-        <main className="admin-content">{children}</main>
+      <AdminNavbar />
+      <div className="admin-content-wrapper">
+        <AdminSidebar />
+        <main className="admin-main-content">
+          {children}
+        </main>
       </div>
     </div>
   )
