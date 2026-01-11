@@ -21,6 +21,7 @@ const AdminRevenue = () => {
   const [currentUser, setCurrentUser] = useState(null)
   const [editingItem, setEditingItem] = useState(null)
   const [selectedMonth, setSelectedMonth] = useState("all")
+  const [selectedAssist, setSelectedAssist] = useState("all")
 
   const [formData, setFormData] = useState({
     country: "Sri Lanka",
@@ -42,17 +43,20 @@ const AdminRevenue = () => {
 
   useEffect(() => {
     calculateTotal()
-  }, [data, selectedMonth])
+  }, [data, selectedMonth, selectedAssist])
 
   const calculateTotal = () => {
     let filtered = data
     if (selectedMonth !== "all") {
-      filtered = data.filter(item => {
+      filtered = filtered.filter(item => {
         const itemDate = new Date(item.date)
         const [year, month] = selectedMonth.split("-")
         return itemDate.getFullYear() === parseInt(year) && 
                itemDate.getMonth() + 1 === parseInt(month)
       })
+    }
+    if (selectedAssist !== "all") {
+      filtered = filtered.filter(item => item.assist === selectedAssist)
     }
     const total = filtered.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
     setTotalRevenue(total)
@@ -308,23 +312,39 @@ const AdminRevenue = () => {
                 <strong>Total Revenue:</strong>
                 <span className="fs-4 fw-bold ms-2">¥{totalRevenue.toLocaleString()}</span>
               </div>
-              <div>
-                <label className="form-label me-2 mb-0" style={{ fontSize: '11px' }}>Filter by Month:</label>
-                <select 
-                  className="form-select form-select-sm d-inline-block" 
-                  style={{ width: 'auto' }}
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                >
-                  <option value="all">All Time</option>
-                  {[...Array(12)].map((_, i) => {
-                    const date = new Date()
-                    date.setMonth(date.getMonth() - i)
-                    const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-                    const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-                    return <option key={value} value={value}>{label}</option>
-                  })}
-                </select>
+              <div className="d-flex gap-3 align-items-center">
+                <div>
+                  <label className="form-label me-2 mb-0" style={{ fontSize: '11px' }}>Filter by Assist:</label>
+                  <select 
+                    className="form-select form-select-sm d-inline-block" 
+                    style={{ width: 'auto' }}
+                    value={selectedAssist}
+                    onChange={(e) => setSelectedAssist(e.target.value)}
+                  >
+                    <option value="all">All</option>
+                    <option value="Vishwa">Vishwa</option>
+                    <option value="Dilshan">Dilshan</option>
+                    <option value="Saman">Saman</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="form-label me-2 mb-0" style={{ fontSize: '11px' }}>Filter by Month:</label>
+                  <select 
+                    className="form-select form-select-sm d-inline-block" 
+                    style={{ width: 'auto' }}
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                  >
+                    <option value="all">All Time</option>
+                    {[...Array(12)].map((_, i) => {
+                      const date = new Date()
+                      date.setMonth(date.getMonth() - i)
+                      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+                      const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                      return <option key={value} value={value}>{label}</option>
+                    })}
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -379,12 +399,14 @@ const AdminRevenue = () => {
                       <td>{item.rate}</td>
                       <td>{item.invoiceNumber}</td>
                       <td>
-                        <button onClick={() => handleEdit(item)} className="btn btn-sm btn-warning me-2">
-                          {currentUser && !isSuperAdmin(currentUser.email) ? "Request Edit" : "Edit"}
-                        </button>
-                        <button onClick={() => handleDelete(item.id, item)} className="btn btn-sm btn-danger">
-                          {currentUser && !isSuperAdmin(currentUser.email) ? "Request Delete" : "Delete"}
-                        </button>
+                        <div className="d-flex gap-2">
+                          <button onClick={() => handleEdit(item)} className="btn btn-sm btn-warning">
+                            EDIT
+                          </button>
+                          <button onClick={() => handleDelete(item.id, item)} className="btn btn-sm btn-danger">
+                            DELETE
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
