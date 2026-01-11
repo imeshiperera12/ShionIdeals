@@ -330,7 +330,7 @@ const handleGenerateReport = async () => {
                   <label className="form-label me-2 mb-0" style={{ fontSize: '11px' }}>Filter by Assist:</label>
                   <select 
                     className="form-select form-select-sm d-inline-block" 
-                    style={{ width: 'auto' }}
+                     style={{ width: '150px', paddingRight: '2.2rem' }}
                     value={selectedAssist}
                     onChange={(e) => setSelectedAssist(e.target.value)}
                   >
