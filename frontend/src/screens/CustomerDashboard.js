@@ -5,11 +5,11 @@ import { Link, useParams, useLocation } from "react-router-dom"
 import { collection, getDocs, query, where } from "firebase/firestore"
 import { db } from "../firebase"
 import {
-  PieChart,
-  Pie,
-  Cell,
+  LineChart,
+  Line,
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -38,6 +38,7 @@ const CustomerDashboard = () => {
     revenueCount: 0,
     expensesCount: 0,
   })
+  const [lineChartData, setLineChartData] = useState([])
 
   useEffect(() => {
     fetchCustomerData()
@@ -52,6 +53,53 @@ const CustomerDashboard = () => {
       return itemDate.getFullYear() === parseInt(year) && 
              itemDate.getMonth() + 1 === parseInt(month)
     })
+  }
+
+  const generateLineChartData = (sellingItems, buyingItems, revenueItems, expensesItems) => {
+    const monthlyData = {}
+
+    // Helper function to add data to monthly totals
+    const addToMonth = (item, category) => {
+      const date = new Date(item.date)
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+      
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = {
+          month: monthKey,
+          Selling: 0,
+          Buying: 0,
+          Revenue: 0,
+          Expenses: 0,
+        }
+      }
+
+      if (category === 'selling') {
+        monthlyData[monthKey].Selling += Number.parseFloat(item.sellingPrice) || 0
+      } else if (category === 'buying') {
+        monthlyData[monthKey].Buying += Number.parseFloat(item.price) || 0
+      } else if (category === 'revenue') {
+        monthlyData[monthKey].Revenue += Number.parseFloat(item.amount) || 0
+      } else if (category === 'expenses') {
+        monthlyData[monthKey].Expenses += Number.parseFloat(item.amount) || 0
+      }
+    }
+
+    // Process all items
+    sellingItems.forEach(item => addToMonth(item, 'selling'))
+    buyingItems.forEach(item => addToMonth(item, 'buying'))
+    revenueItems.forEach(item => addToMonth(item, 'revenue'))
+    expensesItems.forEach(item => addToMonth(item, 'expenses'))
+
+    // Convert to array and sort by date
+    const chartData = Object.values(monthlyData).sort((a, b) => {
+      return a.month.localeCompare(b.month)
+    })
+
+    // Format month labels
+    return chartData.map(item => ({
+      ...item,
+      month: new Date(item.month + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    }))
   }
 
   const fetchCustomerData = async () => {
@@ -87,7 +135,32 @@ const CustomerDashboard = () => {
         expensesItems.push({ id: doc.id, ...doc.data() })
       })
 
-      // Filter by selected month
+      // Generate line chart data based on filter
+      let chartDataSource = {
+        selling: sellingItems,
+        buying: buyingItems,
+        revenue: revenueItems,
+        expenses: expensesItems
+      }
+
+      if (selectedMonth !== "all") {
+        chartDataSource = {
+          selling: filterByMonth(sellingItems),
+          buying: filterByMonth(buyingItems),
+          revenue: filterByMonth(revenueItems),
+          expenses: filterByMonth(expensesItems)
+        }
+      }
+
+      const lineData = generateLineChartData(
+        chartDataSource.selling,
+        chartDataSource.buying,
+        chartDataSource.revenue,
+        chartDataSource.expenses
+      )
+      setLineChartData(lineData)
+
+      // Filter by selected month for dashboard cards
       const filteredSelling = filterByMonth(sellingItems)
       const filteredBuying = filterByMonth(buyingItems)
       const filteredRevenue = filterByMonth(revenueItems)
@@ -143,19 +216,12 @@ const CustomerDashboard = () => {
     }
   }
 
-  // Pie chart data
-  const pieChartData = [
-    { name: "Selling Profit", value: dashboardData.sellingProfit, color: "#10b981" },
-    { name: "Buying", value: dashboardData.totalBuying, color: "#f59e0b" },
-    { name: "Expenses", value: dashboardData.totalExpenses, color: "#ef4444" },
-  ]
-
-  // Bar chart data
+  // Bar chart data with updated colors
   const barChartData = [
-    { name: "Revenue", amount: dashboardData.totalRevenue },
-    { name: "Selling Profit", amount: dashboardData.sellingProfit },
-    { name: "Buying", amount: dashboardData.totalBuying },
-    { name: "Expenses", amount: dashboardData.totalExpenses },
+    { name: "Revenue", amount: dashboardData.totalRevenue, fill: "#10b981" },
+    { name: "Selling Profit", amount: dashboardData.sellingProfit, fill: "#3b82f6" },
+    { name: "Buying", amount: dashboardData.totalBuying, fill: "#f59e0b" },
+    { name: "Expenses", amount: dashboardData.totalExpenses, fill: "#ef4444" },
   ]
 
   if (loading) {
@@ -194,7 +260,7 @@ const CustomerDashboard = () => {
                   </label>
                   <select 
                     className="form-select form-select-sm d-inline-block" 
-                    style={{ width: 'auto' }}
+                    style={{ width: 'auto', paddingRight: '2.5rem' }}
                     value={selectedMonth}
                     onChange={(e) => setSelectedMonth(e.target.value)}
                   >
@@ -311,25 +377,58 @@ const CustomerDashboard = () => {
           {/* Analytics Section */}
           <div className="charts-grid">
             <div className="chart-card">
-              <h5>Financial Distribution</h5>
+              <h5>Monthly Trends</h5>
               <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie
-                    data={pieChartData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={90}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {pieChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => `¥${value.toLocaleString()}`} />
-                </PieChart>
+                <LineChart data={lineChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis 
+                    dataKey="month" 
+                    stroke="#94a3b8" 
+                    style={{ fontSize: '0.7rem' }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={80}
+                  />
+                  <YAxis stroke="#94a3b8" style={{ fontSize: '0.7rem' }} />
+                  <Tooltip 
+                    formatter={(value) => `¥${value.toLocaleString()}`}
+                    contentStyle={{ 
+                      backgroundColor: '#1e293b', 
+                      border: '1px solid #334155',
+                      borderRadius: '4px',
+                      fontSize: '0.75rem'
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
+                  <Line 
+                    type="monotone" 
+                    dataKey="Selling" 
+                    stroke="#3b82f6" 
+                    strokeWidth={2}
+                    dot={{ fill: '#3b82f6' }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="Buying" 
+                    stroke="#f59e0b" 
+                    strokeWidth={2}
+                    dot={{ fill: '#f59e0b' }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="Revenue" 
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    dot={{ fill: '#10b981' }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="Expenses" 
+                    stroke="#ef4444" 
+                    strokeWidth={2}
+                    dot={{ fill: '#ef4444' }}
+                  />
+                </LineChart>
               </ResponsiveContainer>
             </div>
 
@@ -350,7 +449,11 @@ const CustomerDashboard = () => {
                     }}
                   />
                   <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
-                  <Bar dataKey="amount" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
+                    {barChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
