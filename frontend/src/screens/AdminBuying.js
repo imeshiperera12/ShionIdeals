@@ -48,6 +48,7 @@ const AdminBuying = () => {
 
   const calculateTotal = () => {
     let filtered = data
+    
     if (selectedMonth !== "all") {
       filtered = filtered.filter(item => {
         const itemDate = new Date(item.date)
@@ -56,9 +57,14 @@ const AdminBuying = () => {
                itemDate.getMonth() + 1 === parseInt(month)
       })
     }
+    
     if (selectedAssist !== "all") {
-      filtered = filtered.filter(item => item.assist === selectedAssist)
+      // Fixed: case-insensitive comparison with trim
+      filtered = filtered.filter(item => 
+        item.assist?.trim().toLowerCase() === selectedAssist.toLowerCase()
+      )
     }
+    
     const total = filtered.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0)
     setTotalBuying(total)
   }
@@ -243,9 +249,29 @@ const AdminBuying = () => {
   }
 
   const filteredAndSortedData = data
-    .filter((item) =>
-      Object.values(item).some((value) => value?.toString().toLowerCase().includes(searchTerm.toLowerCase())),
-    )
+    .filter((item) => {
+      // Apply assist filter first
+      let matchesAssist = true
+      if (selectedAssist !== "all") {
+        matchesAssist = item.assist?.trim().toLowerCase() === selectedAssist.toLowerCase()
+      }
+      
+      // Apply month filter
+      let matchesMonth = true
+      if (selectedMonth !== "all") {
+        const itemDate = new Date(item.date)
+        const [year, month] = selectedMonth.split("-")
+        matchesMonth = itemDate.getFullYear() === parseInt(year) && 
+                      itemDate.getMonth() + 1 === parseInt(month)
+      }
+      
+      // Apply search filter
+      const matchesSearch = searchTerm === "" || Object.values(item).some((value) => 
+        value?.toString().toLowerCase().includes(searchTerm.toLowerCase())
+      )
+      
+      return matchesSearch && matchesMonth && matchesAssist
+    })
     .sort((a, b) => {
       const aVal = a[sortField]
       const bVal = b[sortField]
@@ -265,7 +291,7 @@ const AdminBuying = () => {
     return new Date(timestamp).toLocaleString()
   }
 
-const handleGenerateReport = async () => {
+  const handleGenerateReport = async () => {
     const headers = ["Date", "Time", "Assist", "Type", "Identifier", "Market", "Web Option", "Domestic Seller", "Price (¥)"]
     const reportData = filteredAndSortedData.map((item) => [
       item.date,
@@ -286,8 +312,8 @@ const handleGenerateReport = async () => {
     }
 
     await generatePDF("Buying Report", headers, reportData, summary)
-  generateExcel("Buying Report", headers, reportData, summary)
-}
+    generateExcel("Buying Report", headers, reportData, summary)
+  }
 
   if (loading) {
     return (
@@ -330,7 +356,7 @@ const handleGenerateReport = async () => {
                   <label className="form-label me-2 mb-0" style={{ fontSize: '11px' }}>Filter by Assist:</label>
                   <select 
                     className="form-select form-select-sm d-inline-block" 
-                     style={{ width: '150px', paddingRight: '2.2rem' }}
+                    style={{ width: '150px', paddingRight: '2.2rem' }}
                     value={selectedAssist}
                     onChange={(e) => setSelectedAssist(e.target.value)}
                   >
@@ -461,8 +487,8 @@ const handleGenerateReport = async () => {
                           required
                         >
                           <option value="Vishwa">Vishwa</option>
-                        <option value="Dilshan">Dilshan (dilaheraz1@gmail.com)</option>
-<option value="Saman">Saman (samanslk10@gmail.com)</option>
+                          <option value="Dilshan">Dilshan</option>
+                          <option value="Saman">Saman</option>
                         </select>
                       </div>
                       <div className="col-md-6 mb-3">
