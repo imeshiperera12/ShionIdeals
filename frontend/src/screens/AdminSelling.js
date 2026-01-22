@@ -64,6 +64,7 @@ const AdminSelling = () => {
 
   const calculateTotal = () => {
     let filtered = data
+    
     if (selectedMonth !== "all") {
       filtered = filtered.filter(item => {
         const itemDate = new Date(item.date)
@@ -72,9 +73,14 @@ const AdminSelling = () => {
                itemDate.getMonth() + 1 === parseInt(month)
       })
     }
+    
     if (selectedAssist !== "all") {
-      filtered = filtered.filter(item => item.assist === selectedAssist)
+      // Fixed: case-insensitive comparison with trim
+      filtered = filtered.filter(item => 
+        item.assist?.trim().toLowerCase() === selectedAssist.toLowerCase()
+      )
     }
+    
     const total = filtered.reduce((sum, item) => sum + (parseFloat(item.profit) || 0), 0)
     setTotalProfit(total)
   }
@@ -276,9 +282,29 @@ const AdminSelling = () => {
   }
 
   const filteredAndSortedData = data
-    .filter((item) =>
-      Object.values(item).some((value) => value?.toString().toLowerCase().includes(searchTerm.toLowerCase())),
-    )
+    .filter((item) => {
+      // Apply assist filter first
+      let matchesAssist = true
+      if (selectedAssist !== "all") {
+        matchesAssist = item.assist?.trim().toLowerCase() === selectedAssist.toLowerCase()
+      }
+      
+      // Apply month filter
+      let matchesMonth = true
+      if (selectedMonth !== "all") {
+        const itemDate = new Date(item.date)
+        const [year, month] = selectedMonth.split("-")
+        matchesMonth = itemDate.getFullYear() === parseInt(year) && 
+                      itemDate.getMonth() + 1 === parseInt(month)
+      }
+      
+      // Apply search filter
+      const matchesSearch = searchTerm === "" || Object.values(item).some((value) => 
+        value?.toString().toLowerCase().includes(searchTerm.toLowerCase())
+      )
+      
+      return matchesSearch && matchesMonth && matchesAssist
+    })
     .sort((a, b) => {
       const aVal = a[sortField]
       const bVal = b[sortField]
@@ -458,10 +484,10 @@ const AdminSelling = () => {
                             📄
                           </button>
                           <button onClick={() => handleEdit(item)} className="btn btn-sm btn-warning">
-                            EDIT
+                            {currentUser && !isSuperAdmin(currentUser.email) ? "Request Edit" : "Edit"}
                           </button>
                           <button onClick={() => handleDelete(item.id, item)} className="btn btn-sm btn-danger">
-                            DELETE
+                            {currentUser && !isSuperAdmin(currentUser.email) ? "Request Delete" : "Delete"}
                           </button>
                         </div>
                       </td>
@@ -493,6 +519,186 @@ const AdminSelling = () => {
                 </div>
                 <div className="modal-body">
                   <form onSubmit={handleSubmit}>
+                    <div className="row">
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Assist</label>
+                        <select
+                          className="form-select"
+                          value={formData.assist}
+                          onChange={(e) => setFormData({ ...formData, assist: e.target.value })}
+                          required
+                        >
+                          <option value="Vishwa">Vishwa</option>
+                          <option value="Dilshan">Dilshan</option>
+                          <option value="Saman">Saman</option>
+                        </select>
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Date</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={formData.date}
+                          onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Buying ID</label>
+                        <select
+                          className="form-select"
+                          value={formData.buyingId}
+                          onChange={(e) => setFormData({ ...formData, buyingId: e.target.value })}
+                          required
+                        >
+                          <option value="">Select buying entry</option>
+                          {buyingItems.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.identifier} - {item.objectType} (¥{item.price})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Selling Price (¥)</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          value={formData.sellingPrice}
+                          onChange={(e) => setFormData({ ...formData, sellingPrice: e.target.value })}
+                          required
+                          min="0"
+                          step="0.01"
+                        />
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Profit (¥) - Auto Calculated</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          value={formData.profit}
+                          readOnly
+                          style={{ backgroundColor: '#e9ecef' }}
+                          step="0.01"
+                        />
+                        <small className="text-muted">Automatically calculated: Selling Price - Buying Price</small>
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Country</label>
+                        <select
+                          className="form-select"
+                          value={formData.country}
+                          onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                          required
+                        >
+                          <option value="Sri Lanka">Sri Lanka</option>
+                          <option value="Japan">Japan</option>
+                          <option value="Custom">Other (Type Custom)</option>
+                        </select>
+                      </div>
+                      {formData.country === "Custom" && (
+                        <div className="col-md-6 mb-3">
+                          <label className="form-label">Custom Country</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            value={formData.customCountry}
+                            onChange={(e) => setFormData({ ...formData, customCountry: e.target.value })}
+                            placeholder="Enter country name"
+                            required
+                          />
+                        </div>
+                      )}
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Customer Name / Company Name</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={formData.customerName}
+                          onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
+                          placeholder="Enter customer or company name"
+                          required
+                        />
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Customer Email</label>
+                        <input
+                          type="email"
+                          className="form-control"
+                          value={formData.customerEmail}
+                          onChange={(e) => setFormData({ ...formData, customerEmail: e.target.value })}
+                          placeholder="Enter customer email"
+                          required
+                        />
+                      </div>
+                      <div className="col-md-12 mb-3">
+                        <label className="form-label">Customer Address</label>
+                        <textarea
+                          className="form-control"
+                          value={formData.customerAddress}
+                          onChange={(e) => setFormData({ ...formData, customerAddress: e.target.value })}
+                          placeholder="Enter customer address"
+                          rows="3"
+                          required
+                        />
+                      </div>
+                      <div className="col-md-12 mb-3">
+                        <label className="form-label">Invoice Number</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={formData.invoiceNumber}
+                          onChange={(e) => setFormData({ ...formData, invoiceNumber: e.target.value })}
+                          placeholder="Enter invoice number"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="modal-footer">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setShowModal(false)
+                          resetForm()
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn btn-primary">
+                        Add Sale
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="modal-backdrop show">
+          <div className="modal show d-block" tabIndex="-1">
+            <div className="modal-dialog modal-lg modal-dialog-scrollable">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">
+                    {currentUser && !isSuperAdmin(currentUser.email) ? "Request Edit" : "Edit Sale"}
+                  </h5>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    onClick={() => {
+                      setShowEditModal(false)
+                      setEditingItem(null)
+                      resetForm()
+                    }}
+                  ></button>
+                </div>
+                <div className="modal-body">
+                  <form onSubmit={handleUpdateSubmit}>
                     <div className="row">
                       <div className="col-md-6 mb-3">
                         <label className="form-label">Assist</label>
