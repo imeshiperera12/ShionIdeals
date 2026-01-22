@@ -58,6 +58,8 @@ const AdminDashboard = () => {
 
     // Helper function to add data to monthly totals
     const addToMonth = (item, category) => {
+      if (!item.date) return // Skip items without dates
+      
       const date = new Date(item.date)
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
       
@@ -92,6 +94,9 @@ const AdminDashboard = () => {
     const chartData = Object.values(monthlyData).sort((a, b) => {
       return a.month.localeCompare(b.month)
     })
+
+    // Only return data if there are actual entries
+    if (chartData.length === 0) return []
 
     // Format month labels
     return chartData.map(item => ({
